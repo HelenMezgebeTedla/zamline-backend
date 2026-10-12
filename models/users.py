@@ -15,19 +15,32 @@ class UserRole(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    user_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False, index=True)
+    user_id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
+    )
+    company_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.company_id"),
+        nullable=False,
+        index=True,
+    )
 
     first_name = Column(String(50), nullable=False)
     last_name = Column(String(50), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(
-        Enum(UserRole, values_callable=lambda enum_class: [e.value for e in enum_class], name="userrole"),
+        Enum(
+            UserRole,
+            values_callable=lambda enum_class: [e.value for e in enum_class],
+            name="userrole",
+        ),
         nullable=False,
     )
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     company = relationship("Company", back_populates="users")
     shipments = relationship("Shipment", back_populates="user")
