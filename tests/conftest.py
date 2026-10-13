@@ -1,9 +1,14 @@
+import os
+
+os.environ.setdefault("JWT_SECRET", "test-secret-key")
+
 import pytest
 from datetime import datetime, timezone
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from database import Base
+from database import Base, get_db
 import models
 
 
@@ -189,3 +194,38 @@ def sample_reservation(
     db_session.commit()
     db_session.refresh(reservation)
     return reservation
+
+
+@pytest.fixture
+def mock_otp_email(monkeypatch):
+    captured: list[str] = []
+
+    def _mock(_: str, code: str) -> None:
+        captured.append(code)
+
+    monkeypatch.setattr("services.users.send_otp_email", _mock)
+    return captured
+
+
+@pytest.fixture
+def reset_otp_store():
+    from security.otp import otp_store
+
+    otp_store.records.clear()
+    yield
+    otp_store.records.clear()
+
+
+@pytest.fixture
+def client(db_session, mock_otp_email, reset_otp_store):
+    from main import app
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(app) as api_client:
+        yield api_client
+
+    app.dependency_overrides.clear()
