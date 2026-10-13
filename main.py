@@ -6,7 +6,6 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="ZamLine", version="0.1.0")
 
 
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
