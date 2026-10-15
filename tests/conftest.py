@@ -1,6 +1,11 @@
 from database import Base
-import models.shipments
+import models.audit_logs
+import models.companies
+import models.reservations
 import models.shipment_matches
+import models.shipments
+import models.trucks
+import models.users
 import os
 
 os.environ.setdefault("JWT_SECRET", "test-secret-key")
