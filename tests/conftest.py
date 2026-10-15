@@ -1,3 +1,6 @@
+from database import Base, engine
+import models.shipments
+import models.shipment_matches  
 import os
 
 os.environ.setdefault("JWT_SECRET", "test-secret-key")
@@ -8,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from database import Base, get_db
+from database import get_db
 import models
 
 
