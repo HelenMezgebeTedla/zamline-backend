@@ -1,6 +1,6 @@
 from database import Base, engine
 import models.shipments
-import models.shipment_matches  
+import models.shipment_matches
 import os
 
 os.environ.setdefault("JWT_SECRET", "test-secret-key")
