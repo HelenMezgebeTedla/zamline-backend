@@ -1,4 +1,4 @@
-from database import Base, engine
+from database import Base
 import models.shipments
 import models.shipment_matches
 import os
