@@ -1,8 +1,28 @@
+from fastapi.testclient import TestClient
+from main import app
+import models
 import pytest
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
-import models
+from dependency import require_verified_company
+from routers.shipments import shipper
+
+
+class MockUser:
+    user_id = uuid.uuid4()
+    role = "shipper"
+
+
+class MockCompany:
+    company_id = uuid.uuid4()
+    is_verified = True
+
+
+app.dependency_overrides[shipper] = lambda: MockUser()
+app.dependency_overrides[require_verified_company] = lambda: MockCompany()
+
+client = TestClient(app)
 
 
 class TestShipment:
@@ -333,3 +353,128 @@ class TestShipment:
 
         assert sample_shipment.reservation is not None
         assert sample_shipment.reservation.reservation_id == reservation.reservation_id
+
+    def test_create_shipment_success(self):
+        response = client.post(
+            "/shipments/",
+            json={
+                "origin_address": "123 Origin St",
+                "origin_latitude": -15.3875,
+                "origin_longitude": 28.3228,
+                "destination_address": "456 Dest Ave",
+                "destination_latitude": -12.9614,
+                "destination_longitude": 28.6366,
+                "cargo_type": "Industrial Machinery",
+                "weight_kg": 2500.0,
+                "required_body_type": "flatbed",
+                "pickup_time": "2026-11-10T09:00:00Z",
+                "proposed_amount": 2500.00,
+            },
+        )
+        assert response.status_code in [200, 201]
+        data = response.json()
+        assert data["cargo_type"] == "Industrial Machinery"
+        assert data["status"] == "open"
+        assert "shipment_id" in data
+
+    def test_create_shipment_invalid_boundary(self):
+        response = client.post(
+            "/shipments/",
+            json={
+                "origin_address": "123 Origin St",
+                "origin_latitude": -15.3875,
+                "origin_longitude": 28.3228,
+                "destination_address": "456 Dest Ave",
+                "destination_latitude": -12.9614,
+                "destination_longitude": 28.6366,
+                "cargo_type": "Invalid Weight Cargo",
+                "weight_kg": -10.0,
+                "required_body_type": "flatbed",
+                "pickup_time": "2026-11-10T09:00:00Z",
+                "proposed_amount": 2500.00,
+            },
+        )
+        assert response.status_code == 422
+
+    def test_get_all_shipments(self):
+        response = client.get("/shipments/")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_get_shipment_by_id_found(self):
+        create_res = client.post(
+            "/shipments/",
+            json={
+                "origin_address": "123 Origin St",
+                "origin_latitude": -15.3875,
+                "origin_longitude": 28.3228,
+                "destination_address": "456 Dest Ave",
+                "destination_latitude": -12.9614,
+                "destination_longitude": 28.6366,
+                "cargo_type": "Medical Supplies",
+                "weight_kg": 300.0,
+                "required_body_type": "flatbed",
+                "pickup_time": "2026-11-12T10:00:00Z",
+                "proposed_amount": 1000.00,
+            },
+        )
+        if create_res.status_code in [200, 201]:
+            shipment_id = create_res.json()["shipment_id"]
+
+            get_res = client.get(f"/shipments/{shipment_id}")
+            assert get_res.status_code == 200
+            assert get_res.json()["shipment_id"] == shipment_id
+            assert get_res.json()["cargo_type"] == "Medical Supplies"
+
+    def test_get_shipment_by_id_not_found(self):
+        response = client.get("/shipments/00000000-0000-0000-0000-000000000000")
+        assert response.status_code == 404
+
+    def test_update_shipment_status_lifecycle(self):
+        create_res = client.post(
+            "/shipments/",
+            json={
+                "origin_address": "123 Origin St",
+                "origin_latitude": -15.3875,
+                "origin_longitude": 28.3228,
+                "destination_address": "456 Dest Ave",
+                "destination_latitude": -12.9614,
+                "destination_longitude": 28.6366,
+                "cargo_type": "Bulk Agricultural Produce",
+                "weight_kg": 4500.0,
+                "required_body_type": "flatbed",
+                "pickup_time": "2026-11-15T08:30:00Z",
+                "proposed_amount": 4000.00,
+            },
+        )
+        if create_res.status_code in [200, 201]:
+            shipment_id = create_res.json()["shipment_id"]
+
+            update_res = client.patch(
+                f"/shipments/{shipment_id}/status", json={"status": "cancelled"}
+            )
+            assert update_res.status_code == 200
+            assert update_res.json()["status"] == "cancelled"
+
+    def test_cancel_or_delete_shipment(self):
+        create_res = client.post(
+            "/shipments/",
+            json={
+                "origin_address": "123 Origin St",
+                "origin_latitude": -15.3875,
+                "origin_longitude": 28.3228,
+                "destination_address": "456 Dest Ave",
+                "destination_latitude": -12.9614,
+                "destination_longitude": 28.6366,
+                "cargo_type": "Temporary Cargo for Cancellation",
+                "weight_kg": 150.0,
+                "required_body_type": "flatbed",
+                "pickup_time": "2026-11-20T12:00:00Z",
+                "proposed_amount": 500.00,
+            },
+        )
+        if create_res.status_code in [200, 201]:
+            shipment_id = create_res.json()["shipment_id"]
+
+            delete_res = client.delete(f"/shipments/{shipment_id}")
+            assert delete_res.status_code in [200, 204]

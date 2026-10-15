@@ -11,6 +11,7 @@ app.include_router(shipment_matches_router)
 
 app.include_router(shipments_router)
 
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
