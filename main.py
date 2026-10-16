@@ -1,11 +1,23 @@
 from fastapi import FastAPI
-from database import Base, engine
+from fastapi.middleware.cors import CORSMiddleware
+from config import CORS_ORIGINS
 from routers.shipment_matches import router as shipment_matches_router
-
-Base.metadata.create_all(bind=engine)
+from routers.users import router as users_router
+from routers.audit_logs import router as audit_logs_router
 
 app = FastAPI(title="ZamLine", version="0.1.0")
 
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
+app.include_router(users_router)
+app.include_router(audit_logs_router)
 app.include_router(shipment_matches_router)
 
 
