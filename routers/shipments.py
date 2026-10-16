@@ -1,11 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from dependency import require_role, require_verified_company
-from models.users import UserRole
 from schemas.shipments import ShipmentCreate, ShipmentResponse
 from services.shipments import (
     cancel_shipment,
@@ -16,7 +14,19 @@ from services.shipments import (
 
 router = APIRouter(prefix="/shipments", tags=["shipments"])
 
-shipper = require_role(UserRole.SHIPPER)
+
+def shipper():
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Login is not available yet",
+    )
+
+
+def require_verified_company():
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Company verification is not available yet",
+    )
 
 
 @router.post("", response_model=ShipmentResponse, status_code=status.HTTP_201_CREATED)

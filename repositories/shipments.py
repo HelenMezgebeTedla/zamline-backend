@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from models.companies import VerificationStatus
+from models.companies import Company, VerificationStatus
 from models.shipments import Shipment, ShipmentStatus
 
 
@@ -34,8 +34,6 @@ def list_company_shipments(db: Session, company_id: UUID):
 
 
 def list_open_verified_shipments(db: Session):
-    from models.companies import Company
-
     return (
         db.query(Shipment)
         .join(Company, Shipment.company_id == Company.company_id)

@@ -2,23 +2,15 @@ import os
 
 os.environ.setdefault("JWT_SECRET", "test-secret-key")
 
-from datetime import datetime, timezone
-
 import pytest
+from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-import models
-import models.audit_logs
-import models.companies
-import models.reservations
-import models.shipment_matches
-import models.shipments
-import models.trucks
-import models.users
 from database import Base, get_db
+import models
+
 
 SAMPLE_PICKUP_TIME = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
 
@@ -40,30 +32,6 @@ def engine():
     Base.metadata.create_all(bind=engine)
     yield engine
     Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def default_db_override(engine):
-    """Point the app at the in-memory test database for EVERY test.
-
-    This runs automatically, so tests that build their own TestClient
-    (and never request the `client` fixture) still use the test database
-    instead of the real zamline.db.
-    """
-    from main import app
-
-    TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-    def override_get_db():
-        db = TestSession()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override_get_db
-    yield
-    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture(scope="function")
@@ -255,11 +223,9 @@ def client(db_session, mock_otp_email, reset_otp_store):
     def override_get_db():
         yield db_session
 
-    previous_overrides = dict(app.dependency_overrides)
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as api_client:
         yield api_client
 
     app.dependency_overrides.clear()
-    app.dependency_overrides.update(previous_overrides)

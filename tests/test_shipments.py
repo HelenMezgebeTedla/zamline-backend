@@ -1,90 +1,94 @@
-from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
-from main import app
-import models
-import pytest
 import uuid
 from datetime import datetime, timezone
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
-from dependency import require_verified_company
-from routers.shipments import shipper
+
+import models
+from database import get_db
+from routers.shipments import require_verified_company, router, shipper
+
+PICKUP_TIME = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
 
 
-class MockUser:
-    user_id = uuid.uuid4()
-    role = "shipper"
+def shipment_payload(**overrides):
+    payload = {
+        "origin_address": "123 Origin St",
+        "origin_latitude": -15.3875,
+        "origin_longitude": 28.3228,
+        "destination_address": "456 Dest Ave",
+        "destination_latitude": -12.9614,
+        "destination_longitude": 28.6366,
+        "cargo_type": "Maize",
+        "weight_kg": 2500.0,
+        "required_body_type": "flatbed",
+        "pickup_time": "2026-11-10T09:00:00Z",
+        "proposed_amount": 2500.00,
+    }
+    payload.update(overrides)
+    return payload
 
 
-class MockCompany:
-    company_id = uuid.uuid4()
-    is_verified = True
+def shipment_values(company, user, **overrides):
+    values = {
+        "company_id": company.company_id,
+        "user_id": user.user_id,
+        "origin_address": "Lusaka",
+        "origin_latitude": -15.3875,
+        "origin_longitude": 28.3228,
+        "destination_address": "Ndola",
+        "destination_latitude": -12.9587,
+        "destination_longitude": 28.6366,
+        "cargo_type": "Grain",
+        "weight_kg": 1000.0,
+        "required_body_type": models.BodyType.FLATBED,
+        "pickup_time": PICKUP_TIME,
+        "proposed_amount": 3000.00,
+    }
+    values.update(overrides)
+    return values
 
 
-app.dependency_overrides[shipper] = lambda: MockUser()
-app.dependency_overrides[require_verified_company] = lambda: MockCompany()
+def build_test_app(db_session):
+    app = FastAPI()
+    app.include_router(router)
 
-client = TestClient(app)
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    return app
 
 
-@pytest.fixture(scope="module", autouse=True)
-def mock_identity_rows(engine):
-    """Save the mock company and user in the test database so shipments
-    created through the API pass the foreign key checks."""
-    Session = sessionmaker(bind=engine)
-    with Session() as session:
-        session.add(
-            models.Company(
-                company_id=MockCompany.company_id,
-                company_type=models.CompanyType.SHIPPER,
-                business_name="Mock Shipper Co",
-                registration_number="REG-MOCK-001",
-                company_email="mock.shipper@company.com",
-                phone_number="+260000000001",
-            )
-        )
-        session.flush()
-        session.add(
-            models.User(
-                user_id=MockUser.user_id,
-                company_id=MockCompany.company_id,
-                first_name="Mock",
-                last_name="Shipper",
-                email="mock.shipper@test.com",
-                password_hash="hashed_password_mock",
-                role=models.UserRole.SHIPPER,
-            )
-        )
-        session.commit()
+@pytest.fixture
+def api_client(db_session, sample_company, sample_user):
+    app = build_test_app(db_session)
+    app.dependency_overrides[shipper] = lambda: sample_user
+    app.dependency_overrides[require_verified_company] = lambda: sample_company
 
-    yield
-    with Session() as session:
-        session.query(models.Shipment).filter_by(
-            company_id=MockCompany.company_id
-        ).delete()
-        session.query(models.User).filter_by(user_id=MockUser.user_id).delete()
-        session.query(models.Company).filter_by(
-            company_id=MockCompany.company_id
-        ).delete()
-        session.commit()
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class TestShipment:
     def test_create_shipment_happy_path(self, db_session, sample_company, sample_user):
         shipment = models.Shipment(
-            company_id=sample_company.company_id,
-            user_id=sample_user.user_id,
-            origin_address="123 Origin St",
-            origin_latitude=40.7128,
-            origin_longitude=-74.0060,
-            destination_address="456 Dest Ave",
-            destination_latitude=34.0522,
-            destination_longitude=-118.2437,
-            cargo_type="Electronics",
-            weight_kg=5000.0,
-            required_body_type=models.BodyType.FLATBED,
-            pickup_time=datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            special_requirements="Handle with care",
-            proposed_amount=15000.00,
+            **shipment_values(
+                sample_company,
+                sample_user,
+                origin_address="123 Origin St",
+                origin_latitude=40.7128,
+                origin_longitude=-74.0060,
+                destination_address="456 Dest Ave",
+                destination_latitude=34.0522,
+                destination_longitude=-118.2437,
+                cargo_type="Electronics",
+                weight_kg=5000.0,
+                special_requirements="Handle with care",
+                proposed_amount=15000.00,
+            )
         )
         db_session.add(shipment)
         db_session.commit()
@@ -112,21 +116,7 @@ class TestShipment:
     def test_shipment_default_status_open(
         self, db_session, sample_company, sample_user
     ):
-        shipment = models.Shipment(
-            company_id=sample_company.company_id,
-            user_id=sample_user.user_id,
-            origin_address="Lusaka",
-            origin_latitude=-15.3875,
-            origin_longitude=28.3228,
-            destination_address="Ndola",
-            destination_latitude=-12.9587,
-            destination_longitude=28.6366,
-            cargo_type="Grain",
-            weight_kg=1000.0,
-            required_body_type=models.BodyType.FLATBED,
-            pickup_time=datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            proposed_amount=3000.00,
-        )
+        shipment = models.Shipment(**shipment_values(sample_company, sample_user))
         db_session.add(shipment)
         db_session.commit()
         db_session.refresh(shipment)
@@ -146,20 +136,7 @@ class TestShipment:
         self, db_session, sample_company, sample_user, status
     ):
         shipment = models.Shipment(
-            company_id=sample_company.company_id,
-            user_id=sample_user.user_id,
-            origin_address="Lusaka",
-            origin_latitude=-15.3875,
-            origin_longitude=28.3228,
-            destination_address="Ndola",
-            destination_latitude=-12.9587,
-            destination_longitude=28.6366,
-            cargo_type="Grain",
-            weight_kg=1000.0,
-            required_body_type=models.BodyType.FLATBED,
-            pickup_time=datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            proposed_amount=3000.00,
-            status=status,
+            **shipment_values(sample_company, sample_user, status=status)
         )
         db_session.add(shipment)
         db_session.commit()
@@ -170,21 +147,7 @@ class TestShipment:
     def test_shipment_optional_special_requirements(
         self, db_session, sample_company, sample_user
     ):
-        shipment = models.Shipment(
-            company_id=sample_company.company_id,
-            user_id=sample_user.user_id,
-            origin_address="Lusaka",
-            origin_latitude=-15.3875,
-            origin_longitude=28.3228,
-            destination_address="Ndola",
-            destination_latitude=-12.9587,
-            destination_longitude=28.6366,
-            cargo_type="Grain",
-            weight_kg=1000.0,
-            required_body_type=models.BodyType.FLATBED,
-            pickup_time=datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            proposed_amount=3000.00,
-        )
+        shipment = models.Shipment(**shipment_values(sample_company, sample_user))
         db_session.add(shipment)
         db_session.commit()
         db_session.refresh(shipment)
@@ -221,21 +184,7 @@ class TestShipment:
     def test_shipment_missing_required_field(
         self, db_session, sample_company, sample_user, field
     ):
-        values = {
-            "company_id": sample_company.company_id,
-            "user_id": sample_user.user_id,
-            "origin_address": "Lusaka",
-            "origin_latitude": -15.3875,
-            "origin_longitude": 28.3228,
-            "destination_address": "Ndola",
-            "destination_latitude": -12.9587,
-            "destination_longitude": 28.6366,
-            "cargo_type": "Grain",
-            "weight_kg": 1000.0,
-            "required_body_type": models.BodyType.FLATBED,
-            "pickup_time": datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            "proposed_amount": 3000.00,
-        }
+        values = shipment_values(sample_company, sample_user)
         values.pop(field)
         shipment = models.Shipment(**values)
         db_session.add(shipment)
@@ -261,21 +210,7 @@ class TestShipment:
     def test_shipment_invalid_coordinates(
         self, db_session, sample_company, sample_user, field, value
     ):
-        values = {
-            "company_id": sample_company.company_id,
-            "user_id": sample_user.user_id,
-            "origin_address": "Lusaka",
-            "origin_latitude": -15.3875,
-            "origin_longitude": 28.3228,
-            "destination_address": "Ndola",
-            "destination_latitude": -12.9587,
-            "destination_longitude": 28.6366,
-            "cargo_type": "Grain",
-            "weight_kg": 1000.0,
-            "required_body_type": models.BodyType.FLATBED,
-            "pickup_time": datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            "proposed_amount": 3000.00,
-        }
+        values = shipment_values(sample_company, sample_user)
         values[field] = value
         shipment = models.Shipment(**values)
         db_session.add(shipment)
@@ -290,19 +225,7 @@ class TestShipment:
         self, db_session, sample_company, sample_user, weight
     ):
         shipment = models.Shipment(
-            company_id=sample_company.company_id,
-            user_id=sample_user.user_id,
-            origin_address="Lusaka",
-            origin_latitude=-15.3875,
-            origin_longitude=28.3228,
-            destination_address="Ndola",
-            destination_latitude=-12.9587,
-            destination_longitude=28.6366,
-            cargo_type="Grain",
-            weight_kg=weight,
-            required_body_type=models.BodyType.FLATBED,
-            pickup_time=datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            proposed_amount=3000.00,
+            **shipment_values(sample_company, sample_user, weight_kg=weight)
         )
         db_session.add(shipment)
 
@@ -316,19 +239,7 @@ class TestShipment:
         self, db_session, sample_company, sample_user, amount
     ):
         shipment = models.Shipment(
-            company_id=sample_company.company_id,
-            user_id=sample_user.user_id,
-            origin_address="Lusaka",
-            origin_latitude=-15.3875,
-            origin_longitude=28.3228,
-            destination_address="Ndola",
-            destination_latitude=-12.9587,
-            destination_longitude=28.6366,
-            cargo_type="Grain",
-            weight_kg=1000.0,
-            required_body_type=models.BodyType.FLATBED,
-            pickup_time=datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            proposed_amount=amount,
+            **shipment_values(sample_company, sample_user, proposed_amount=amount)
         )
         db_session.add(shipment)
 
@@ -397,127 +308,74 @@ class TestShipment:
         assert sample_shipment.reservation is not None
         assert sample_shipment.reservation.reservation_id == reservation.reservation_id
 
-    def test_create_shipment_success(self):
-        response = client.post(
-            "/shipments/",
-            json={
-                "origin_address": "123 Origin St",
-                "origin_latitude": -15.3875,
-                "origin_longitude": 28.3228,
-                "destination_address": "456 Dest Ave",
-                "destination_latitude": -12.9614,
-                "destination_longitude": 28.6366,
-                "cargo_type": "Industrial Machinery",
-                "weight_kg": 2500.0,
-                "required_body_type": "flatbed",
-                "pickup_time": "2026-11-10T09:00:00Z",
-                "proposed_amount": 2500.00,
-            },
-        )
-        assert response.status_code in [200, 201]
+    def test_create_shipment_success(self, api_client, sample_company, sample_user):
+        response = api_client.post("/shipments", json=shipment_payload())
+
+        assert response.status_code == 201
         data = response.json()
-        assert data["cargo_type"] == "Industrial Machinery"
+        assert data["cargo_type"] == "Maize"
         assert data["status"] == "open"
+        assert data["company_id"] == str(sample_company.company_id)
+        assert data["user_id"] == str(sample_user.user_id)
         assert "shipment_id" in data
 
-    def test_create_shipment_invalid_boundary(self):
-        response = client.post(
-            "/shipments/",
-            json={
-                "origin_address": "123 Origin St",
-                "origin_latitude": -15.3875,
-                "origin_longitude": 28.3228,
-                "destination_address": "456 Dest Ave",
-                "destination_latitude": -12.9614,
-                "destination_longitude": 28.6366,
-                "cargo_type": "Invalid Weight Cargo",
-                "weight_kg": -10.0,
-                "required_body_type": "flatbed",
-                "pickup_time": "2026-11-10T09:00:00Z",
-                "proposed_amount": 2500.00,
-            },
-        )
+    def test_create_shipment_invalid_weight(self, api_client):
+        response = api_client.post("/shipments", json=shipment_payload(weight_kg=-10.0))
+
         assert response.status_code == 422
 
-    def test_get_all_shipments(self):
-        response = client.get("/shipments/")
+    def test_list_shipments_only_returns_own_company(self, api_client, sample_company):
+        api_client.post("/shipments", json=shipment_payload())
+
+        response = api_client.get("/shipments")
+
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        shipments = response.json()
+        assert len(shipments) >= 1
+        for shipment in shipments:
+            assert shipment["company_id"] == str(sample_company.company_id)
 
-    def test_get_shipment_by_id_found(self):
-        create_res = client.post(
-            "/shipments/",
-            json={
-                "origin_address": "123 Origin St",
-                "origin_latitude": -15.3875,
-                "origin_longitude": 28.3228,
-                "destination_address": "456 Dest Ave",
-                "destination_latitude": -12.9614,
-                "destination_longitude": 28.6366,
-                "cargo_type": "Medical Supplies",
-                "weight_kg": 300.0,
-                "required_body_type": "flatbed",
-                "pickup_time": "2026-11-12T10:00:00Z",
-                "proposed_amount": 1000.00,
-            },
+    def test_get_shipment_by_id_found(self, api_client):
+        create_res = api_client.post(
+            "/shipments", json=shipment_payload(cargo_type="Medical Supplies")
         )
-        if create_res.status_code in [200, 201]:
-            shipment_id = create_res.json()["shipment_id"]
+        assert create_res.status_code == 201
+        shipment_id = create_res.json()["shipment_id"]
 
-            get_res = client.get(f"/shipments/{shipment_id}")
-            assert get_res.status_code == 200
-            assert get_res.json()["shipment_id"] == shipment_id
-            assert get_res.json()["cargo_type"] == "Medical Supplies"
+        get_res = api_client.get(f"/shipments/{shipment_id}")
 
-    def test_get_shipment_by_id_not_found(self):
-        response = client.get("/shipments/00000000-0000-0000-0000-000000000000")
+        assert get_res.status_code == 200
+        assert get_res.json()["shipment_id"] == shipment_id
+        assert get_res.json()["cargo_type"] == "Medical Supplies"
+
+    def test_get_shipment_by_id_not_found(self, api_client):
+        response = api_client.get(f"/shipments/{uuid.uuid4()}")
+
         assert response.status_code == 404
 
-    def test_update_shipment_status_lifecycle(self):
-        create_res = client.post(
-            "/shipments/",
-            json={
-                "origin_address": "123 Origin St",
-                "origin_latitude": -15.3875,
-                "origin_longitude": 28.3228,
-                "destination_address": "456 Dest Ave",
-                "destination_latitude": -12.9614,
-                "destination_longitude": 28.6366,
-                "cargo_type": "Bulk Agricultural Produce",
-                "weight_kg": 4500.0,
-                "required_body_type": "flatbed",
-                "pickup_time": "2026-11-15T08:30:00Z",
-                "proposed_amount": 4000.00,
-            },
-        )
-        if create_res.status_code in [200, 201]:
-            shipment_id = create_res.json()["shipment_id"]
+    def test_cancel_open_shipment(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        assert create_res.status_code == 201
+        shipment_id = create_res.json()["shipment_id"]
 
-            update_res = client.patch(
-                f"/shipments/{shipment_id}/status", json={"status": "cancelled"}
-            )
-            assert update_res.status_code == 200
-            assert update_res.json()["status"] == "cancelled"
+        cancel_res = api_client.post(f"/shipments/{shipment_id}/cancel")
 
-    def test_cancel_or_delete_shipment(self):
-        create_res = client.post(
-            "/shipments/",
-            json={
-                "origin_address": "123 Origin St",
-                "origin_latitude": -15.3875,
-                "origin_longitude": 28.3228,
-                "destination_address": "456 Dest Ave",
-                "destination_latitude": -12.9614,
-                "destination_longitude": 28.6366,
-                "cargo_type": "Temporary Cargo for Cancellation",
-                "weight_kg": 150.0,
-                "required_body_type": "flatbed",
-                "pickup_time": "2026-11-20T12:00:00Z",
-                "proposed_amount": 500.00,
-            },
-        )
-        if create_res.status_code in [200, 201]:
-            shipment_id = create_res.json()["shipment_id"]
+        assert cancel_res.status_code == 200
+        assert cancel_res.json()["status"] == "cancelled"
 
-            delete_res = client.delete(f"/shipments/{shipment_id}")
-            assert delete_res.status_code in [200, 204]
+    def test_cannot_cancel_shipment_twice(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+        api_client.post(f"/shipments/{shipment_id}/cancel")
+
+        again_res = api_client.post(f"/shipments/{shipment_id}/cancel")
+
+        assert again_res.status_code == 409
+
+    def test_shipments_locked_until_login_is_available(self, db_session):
+        app = build_test_app(db_session)
+
+        with TestClient(app) as test_client:
+            response = test_client.get("/shipments")
+
+        assert response.status_code == 401

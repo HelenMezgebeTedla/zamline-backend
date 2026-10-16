@@ -7,11 +7,12 @@ from config import UNACCEPTED_CARGO_TYPES
 from models.shipments import ShipmentStatus
 from repositories.shipments import (
     create_shipment as create_shipment_record,
+)
+from repositories.shipments import (
     get_company_shipment,
     list_company_shipments,
 )
 from schemas.shipments import ShipmentCreate
-from services.audit_logs import record_event
 
 
 def validate_cargo(cargo_type: str) -> None:
@@ -35,14 +36,6 @@ def create_shipment(
         company_id=company_id,
         user_id=user_id,
         **data.model_dump(),
-    )
-    record_event(
-        db,
-        "shipment_published",
-        user_id=user_id,
-        company_id=company_id,
-        entity_type="shipment",
-        entity_id=shipment.shipment_id,
     )
     db.commit()
     db.refresh(shipment)
@@ -74,14 +67,6 @@ def cancel_shipment(
         )
 
     shipment.status = ShipmentStatus.CANCELLED
-    record_event(
-        db,
-        "shipment_cancelled",
-        user_id=user_id,
-        company_id=company_id,
-        entity_type="shipment",
-        entity_id=shipment.shipment_id,
-    )
     db.commit()
     db.refresh(shipment)
     return shipment
