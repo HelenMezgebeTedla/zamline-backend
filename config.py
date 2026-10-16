@@ -5,11 +5,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "10"))
 OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 ORS_BASE_URL = os.getenv(
@@ -31,8 +40,11 @@ EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() == "true"
 
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads/certificates"))
+
 UNACCEPTED_CARGO_TYPES = {
     item.strip().lower()
     for item in os.getenv("UNACCEPTED_CARGO_TYPES", "").split(",")
     if item.strip()
 }
+REDIS_URL = os.getenv("REDIS_URL", "")

@@ -1,0 +1,170 @@
+import smtplib
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import jwt
+import pytest
+
+from config import JWT_ALGORITHM, JWT_SECRET
+from security import email as email_module
+from security.password import hash_password, verify_password
+from security.tokens import create_access_token, decode_access_token
+
+
+class TestPasswordHashing:
+    def test_hash_password_returns_string(self):
+        result = hash_password("SecurePass123")
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert result != "SecurePass123"
+
+    def test_verify_password_correct(self):
+        hashed = hash_password("MyPassword123")
+        assert verify_password("MyPassword123", hashed) is True
+
+    def test_verify_password_incorrect(self):
+        hashed = hash_password("MyPassword123")
+        assert verify_password("WrongPassword", hashed) is False
+
+    def test_hash_password_different_salts(self):
+        hash1 = hash_password("Password123")
+        hash2 = hash_password("Password123")
+        assert hash1 != hash2
+
+    def test_verify_password_invalid_hash(self):
+        assert verify_password("Password123", "invalid_hash") is False
+
+    def test_hash_password_empty_string(self):
+        result = hash_password("")
+        assert isinstance(result, str)
+        assert verify_password("", result) is True
+
+
+def _encode(payload: dict, secret: str = JWT_SECRET) -> str:
+    return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
+
+
+def _claims(**overrides) -> dict:
+    claims = {
+        "sub": str(uuid.uuid4()),
+        "role": "shipper",
+        "type": "access",
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
+    claims.update(overrides)
+    return claims
+
+
+class TestJWTTokens:
+    def test_create_access_token_returns_string(self):
+        token = create_access_token(uuid.uuid4(), "shipper")
+        assert isinstance(token, str)
+        assert len(token) > 0
+
+    def test_decode_access_token_returns_payload(self):
+        user_id = uuid.uuid4()
+        payload = decode_access_token(create_access_token(user_id, "fleet_manager"))
+        assert payload["sub"] == str(user_id)
+        assert payload["role"] == "fleet_manager"
+        assert payload["type"] == "access"
+
+    def test_decode_invalid_token_raises(self):
+        with pytest.raises(jwt.PyJWTError):
+            decode_access_token("invalid_token")
+
+    def test_token_type_mismatch_raises(self):
+        with pytest.raises(jwt.InvalidTokenError):
+            decode_access_token(_encode(_claims(type="refresh")))
+
+    def test_expired_token_raises(self):
+        expired = _claims(exp=datetime.now(timezone.utc) - timedelta(minutes=1))
+        with pytest.raises(jwt.ExpiredSignatureError):
+            decode_access_token(_encode(expired))
+
+    def test_token_signed_with_another_secret_raises(self):
+        forged = _encode(_claims(), secret="a-different-secret-of-sufficient-length")
+        with pytest.raises(jwt.InvalidSignatureError):
+            decode_access_token(forged)
+
+    def test_token_without_expiry_raises(self):
+        claims = _claims()
+        del claims["exp"]
+        with pytest.raises(jwt.PyJWTError):
+            decode_access_token(_encode(claims))
+
+    def test_missing_secret_is_an_error(self, monkeypatch):
+        monkeypatch.setattr("security.tokens.JWT_SECRET", "")
+        with pytest.raises(RuntimeError):
+            create_access_token(uuid.uuid4(), "shipper")
+
+
+class FakeSMTP:
+    instances: list["FakeSMTP"] = []
+
+    def __init__(self, host, port, timeout=None):
+        self.host = host
+        self.port = port
+        self.actions: list[str] = []
+        self.message = None
+        FakeSMTP.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def starttls(self):
+        self.actions.append("starttls")
+
+    def login(self, username, password):
+        self.actions.append(f"login:{username}")
+
+    def send_message(self, message):
+        self.message = message
+
+
+@pytest.fixture
+def smtp_settings(monkeypatch):
+    values = {
+        "EMAIL_HOST": "smtp.zamline-tests.com",
+        "EMAIL_PORT": 587,
+        "EMAIL_USERNAME": "mailer",
+        "EMAIL_PASSWORD": "mailer-password",
+        "EMAIL_FROM": "no-reply@zamline-tests.com",
+        "EMAIL_USE_TLS": True,
+    }
+    for name, value in values.items():
+        monkeypatch.setattr(email_module, name, value)
+    FakeSMTP.instances.clear()
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    return values
+
+
+class TestOTPEmail:
+    def test_unconfigured_email_is_an_error(self, monkeypatch):
+        monkeypatch.setattr(email_module, "EMAIL_HOST", "")
+        with pytest.raises(RuntimeError):
+            email_module.send_otp_email("user@zamline-tests.com", "123456")
+
+    def test_missing_password_is_an_error(self, smtp_settings, monkeypatch):
+        monkeypatch.setattr(email_module, "EMAIL_PASSWORD", "")
+        with pytest.raises(RuntimeError):
+            email_module.send_otp_email("user@zamline-tests.com", "123456")
+        assert FakeSMTP.instances == []
+
+    def test_email_is_sent_with_tls_and_login(self, smtp_settings):
+        email_module.send_otp_email("user@zamline-tests.com", "123456")
+
+        server = FakeSMTP.instances[0]
+        assert server.host == "smtp.zamline-tests.com"
+        assert server.actions == ["starttls", "login:mailer"]
+        assert server.message["To"] == "user@zamline-tests.com"
+        assert server.message["From"] == "no-reply@zamline-tests.com"
+        assert "123456" in server.message.get_payload()
+
+    def test_tls_can_be_disabled_for_local_relays(self, smtp_settings, monkeypatch):
+        monkeypatch.setattr(email_module, "EMAIL_USE_TLS", False)
+        email_module.send_otp_email("user@zamline-tests.com", "123456")
+        assert FakeSMTP.instances[0].actions == ["login:mailer"]

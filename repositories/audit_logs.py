@@ -12,6 +12,8 @@ def create_audit_log(
     entity_id=None,
     details: dict | None = None,
 ):
+
+
     audit_log = AuditLog(
         user_id=user_id,
         company_id=company_id,
@@ -24,7 +26,6 @@ def create_audit_log(
     db.commit()
     db.refresh(audit_log)
     return audit_log
-
 
 def add(db: Session, entry: AuditLog):
     db.add(entry)
