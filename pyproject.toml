@@ -19,6 +19,7 @@ dependencies = [
     "pyzbar>=0.1.9",
     "pytesseract>=0.3.10",
     "pdf2image>=1.17",
+    "redis>=8.1.0",
 ]
 
 [dependency-groups]

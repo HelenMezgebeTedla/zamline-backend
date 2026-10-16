@@ -140,6 +140,20 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
         details={"role": role},
     )
 
+    try:
+        otp_service.issue_otp(db, user)
+    except HTTPException:
+        pass
+    else:
+        create_audit_log(
+            db,
+            user_id=user.user_id,
+            company_id=company.company_id,
+            action_type="registration_otp_sent",
+            entity_type="user",
+            entity_id=user.user_id,
+        )
+
     return {"user": user_to_dict(user), "company": get_company_profile(company)}
 
 

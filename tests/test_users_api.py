@@ -159,6 +159,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
 
         response = _login(client, payload)
 
@@ -202,6 +203,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         user = db_session.query(models.User).one()
         user.is_active = False
         db_session.commit()
@@ -216,6 +218,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
 
         response = client.post(
@@ -234,6 +237,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
         code = mock_otp_email[0]
 
@@ -254,6 +258,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
         body = {"email": payload["company_email"], "code": mock_otp_email[0]}
 
@@ -265,6 +270,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
         code = mock_otp_email[0]
 
@@ -288,6 +294,7 @@ class TestLoginAndOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
         record = _cached_otp(db_session)
         record.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -341,6 +348,8 @@ class TestResendOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
+        otp_service.clear_otp_cache()
 
         unknown = client.post(
             "/users/resend-otp", json={"email": "nobody@zamline-tests.com"}
@@ -358,6 +367,7 @@ class TestResendOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
 
         client.post("/users/resend-otp", json={"email": payload["company_email"]})
@@ -369,6 +379,7 @@ class TestResendOTP:
     ):
         payload = registration_payload()
         client.post("/users/register", json=payload)
+        mock_otp_email.clear()
         _login(client, payload)
         record = _cached_otp(db_session)
         record.created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -501,3 +512,37 @@ class TestProfile:
         assert client.get("/users/me", headers=session["headers"]).status_code == 401
         assert _login(client, session["payload"]).status_code == 403
         assert _actions(db_session, "user_deletion_requested") == 1
+
+
+class TestSignupOTP:
+    def test_register_sends_a_verification_code(
+        self, client, mock_otp_email, registration_payload
+    ):
+        payload = registration_payload()
+        response = client.post("/users/register", json=payload)
+        assert response.status_code == 201
+        assert len(mock_otp_email) == 1
+        verified = client.post(
+            "/users/verify-otp",
+            json={"email": payload["company_email"], "code": mock_otp_email[-1]},
+        )
+        assert verified.status_code == 200
+
+    def test_register_succeeds_even_if_email_fails(
+        self, client, monkeypatch, registration_payload
+    ):
+        def _fail(_email, _code):
+            raise RuntimeError("smtp down")
+
+        monkeypatch.setattr("services.otp.send_otp_email", _fail)
+        response = client.post("/users/register", json=registration_payload())
+        assert response.status_code == 201
+
+    def test_mismatched_confirm_password_is_rejected(
+        self, client, registration_payload
+    ):
+        response = client.post(
+            "/users/register",
+            json=registration_payload(confirm_password="Different123"),
+        )
+        assert response.status_code == 422
