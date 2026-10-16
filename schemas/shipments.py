@@ -24,6 +24,21 @@ class ShipmentCreate(BaseModel):
     proposed_amount: Decimal = Field(gt=0)
 
 
+class ShipmentUpdate(BaseModel):
+    origin_address: str = Field(default=None, min_length=2, max_length=250)
+    origin_latitude: float = Field(default=None, ge=-90, le=90)
+    origin_longitude: float = Field(default=None, ge=-180, le=180)
+    destination_address: str = Field(default=None, min_length=2, max_length=250)
+    destination_latitude: float = Field(default=None, ge=-90, le=90)
+    destination_longitude: float = Field(default=None, ge=-180, le=180)
+    cargo_type: str = Field(default=None, min_length=2, max_length=20)
+    weight_kg: float = Field(default=None, gt=0)
+    required_body_type: BodyType = None
+    pickup_time: datetime = None
+    special_requirements: Optional[str] = None
+    proposed_amount: Decimal = Field(default=None, gt=0)
+
+
 class ShipmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

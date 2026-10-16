@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas.shipments import ShipmentCreate, ShipmentResponse
+from schemas.shipments import ShipmentCreate, ShipmentResponse, ShipmentUpdate
 from services.shipments import (
     cancel_shipment,
     create_shipment,
     get_shipment,
     list_shipments,
+    update_shipment,
 )
 
 router = APIRouter(prefix="/shipments", tags=["shipments"])
@@ -56,6 +57,23 @@ def read(
     company=Depends(require_verified_company),
 ):
     return get_shipment(db, company.company_id, shipment_id)
+
+
+@router.patch("/{shipment_id}", response_model=ShipmentResponse)
+def update(
+    shipment_id: UUID,
+    payload: ShipmentUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(shipper),
+    company=Depends(require_verified_company),
+):
+    return update_shipment(
+        db,
+        company.company_id,
+        current_user.user_id,
+        shipment_id,
+        payload,
+    )
 
 
 @router.post("/{shipment_id}/cancel", response_model=ShipmentResponse)

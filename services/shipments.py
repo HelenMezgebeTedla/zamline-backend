@@ -12,7 +12,10 @@ from repositories.shipments import (
     get_company_shipment,
     list_company_shipments,
 )
-from schemas.shipments import ShipmentCreate
+from repositories.shipments import (
+    update_shipment as update_shipment_record,
+)
+from schemas.shipments import ShipmentCreate, ShipmentUpdate
 
 
 def validate_cargo(cargo_type: str) -> None:
@@ -50,6 +53,40 @@ def get_shipment(db: Session, company_id: UUID, shipment_id: UUID):
     shipment = get_company_shipment(db, company_id, shipment_id)
     if shipment is None:
         raise HTTPException(status_code=404, detail="Shipment not found")
+    return shipment
+
+
+def update_shipment(
+    db: Session,
+    company_id: UUID,
+    user_id: UUID,
+    shipment_id: UUID,
+    data: ShipmentUpdate,
+):
+    shipment = get_shipment(db, company_id, shipment_id)
+
+    changes = data.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if shipment.status != ShipmentStatus.OPEN:
+        raise HTTPException(
+            status_code=409,
+            detail="Only open shipments can be updated",
+        )
+
+    if shipment.reservation is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Shipments with a reservation cannot be updated",
+        )
+
+    if "cargo_type" in changes:
+        validate_cargo(changes["cargo_type"])
+
+    update_shipment_record(db, shipment, **changes)
+    db.commit()
+    db.refresh(shipment)
     return shipment
 
 

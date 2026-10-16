@@ -13,6 +13,13 @@ def create_shipment(db: Session, **values):
     return shipment
 
 
+def update_shipment(db: Session, shipment: Shipment, **changes):
+    for field, value in changes.items():
+        setattr(shipment, field, value)
+    db.flush()
+    return shipment
+
+
 def get_company_shipment(db: Session, company_id: UUID, shipment_id: UUID):
     return (
         db.query(Shipment)

@@ -379,3 +379,87 @@ class TestShipment:
             response = test_client.get("/shipments")
 
         assert response.status_code == 401
+
+    def test_update_shipment_success(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"weight_kg": 3000.0, "special_requirements": "Fragile"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["weight_kg"] == 3000.0
+        assert data["special_requirements"] == "Fragile"
+        assert data["cargo_type"] == "Maize"
+        assert data["status"] == "open"
+
+    def test_update_shipment_cannot_change_status(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"status": "confirmed", "weight_kg": 1200.0},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "open"
+
+    def test_update_shipment_invalid_value(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(f"/shipments/{shipment_id}", json={"weight_kg": -5})
+
+        assert response.status_code == 422
+
+    def test_update_shipment_null_required_field(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}", json={"weight_kg": None}
+        )
+
+        assert response.status_code == 422
+
+    def test_update_shipment_empty_body(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(f"/shipments/{shipment_id}", json={})
+
+        assert response.status_code == 400
+
+    def test_update_shipment_not_found(self, api_client):
+        response = api_client.patch(
+            f"/shipments/{uuid.uuid4()}",
+            json={"weight_kg": 100.0},
+        )
+
+        assert response.status_code == 404
+
+    def test_update_cancelled_shipment_rejected(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+        api_client.post(f"/shipments/{shipment_id}/cancel")
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"weight_kg": 100.0},
+        )
+
+        assert response.status_code == 409
+
+    def test_update_reserved_shipment_rejected(
+        self, api_client, sample_shipment, sample_reservation
+    ):
+        response = api_client.patch(
+            f"/shipments/{sample_shipment.shipment_id}",
+            json={"weight_kg": 100.0},
+        )
+
+        assert response.status_code == 409
