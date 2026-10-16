@@ -1,6 +1,8 @@
 import os
 
-os.environ.setdefault("JWT_SECRET", "test-secret-key")
+os.environ.setdefault("JWT_SECRET", "ci-only-secret-key-0123456789-abcdef")
+
+import itertools
 
 import pytest
 from datetime import datetime, timezone
@@ -10,7 +12,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from database import Base, get_db
 import models
-
 
 SAMPLE_PICKUP_TIME = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
 
@@ -200,24 +201,15 @@ def sample_reservation(
 def mock_otp_email(monkeypatch):
     captured: list[str] = []
 
-    def _mock(_: str, code: str) -> None:
+    def _capture(_: str, code: str) -> None:
         captured.append(code)
 
-    monkeypatch.setattr("services.users.send_otp_email", _mock)
+    monkeypatch.setattr("services.otp.send_otp_email", _capture)
     return captured
 
 
 @pytest.fixture
-def reset_otp_store():
-    from security.otp import otp_store
-
-    otp_store.records.clear()
-    yield
-    otp_store.records.clear()
-
-
-@pytest.fixture
-def client(db_session, mock_otp_email, reset_otp_store):
+def client(db_session, mock_otp_email):
     from main import app
 
     def override_get_db():
@@ -229,3 +221,55 @@ def client(db_session, mock_otp_email, reset_otp_store):
         yield api_client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def registration_payload():
+    sequence = itertools.count(1)
+
+    def _build(company_type: str = "shipper", **overrides) -> dict:
+        number = next(sequence)
+        payload = {
+            "business_name": f"Test Business {number}",
+            "registration_number": f"REG{number:06d}",
+            "company_email": f"owner{number}@zamline-tests.com",
+            "phone_number": "+260971234567",
+            "company_type": company_type,
+            "first_name": "Test",
+            "last_name": f"Owner{number}",
+            "password": "StrongPass123",
+        }
+        payload.update(overrides)
+        return payload
+
+    return _build
+
+
+@pytest.fixture
+def register_and_login(client, mock_otp_email, registration_payload):
+    def _register(company_type: str = "shipper", **overrides) -> dict:
+        payload = registration_payload(company_type, **overrides)
+        registered = client.post("/users/register", json=payload)
+        assert registered.status_code == 201, registered.text
+
+        login = client.post(
+            "/users/login",
+            json={"email": payload["company_email"], "password": payload["password"]},
+        )
+        assert login.status_code == 200, login.text
+
+        verified = client.post(
+            "/users/verify-otp",
+            json={"email": payload["company_email"], "code": mock_otp_email[-1]},
+        )
+        assert verified.status_code == 200, verified.text
+
+        body = registered.json()
+        return {
+            "headers": {"Authorization": f"Bearer {verified.json()['access_token']}"},
+            "payload": payload,
+            "company_id": body["company"]["company_id"],
+            "user_id": body["user"]["user_id"],
+        }
+
+    return _register
