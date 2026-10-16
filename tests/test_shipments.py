@@ -1,3 +1,4 @@
+from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 from main import app
 import models
@@ -23,6 +24,48 @@ app.dependency_overrides[shipper] = lambda: MockUser()
 app.dependency_overrides[require_verified_company] = lambda: MockCompany()
 
 client = TestClient(app)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def mock_identity_rows(engine):
+    """Save the mock company and user in the test database so shipments
+    created through the API pass the foreign key checks."""
+    Session = sessionmaker(bind=engine)
+    with Session() as session:
+        session.add(
+            models.Company(
+                company_id=MockCompany.company_id,
+                company_type=models.CompanyType.SHIPPER,
+                business_name="Mock Shipper Co",
+                registration_number="REG-MOCK-001",
+                company_email="mock.shipper@company.com",
+                phone_number="+260000000001",
+            )
+        )
+        session.flush()
+        session.add(
+            models.User(
+                user_id=MockUser.user_id,
+                company_id=MockCompany.company_id,
+                first_name="Mock",
+                last_name="Shipper",
+                email="mock.shipper@test.com",
+                password_hash="hashed_password_mock",
+                role=models.UserRole.SHIPPER,
+            )
+        )
+        session.commit()
+
+    yield
+    with Session() as session:
+        session.query(models.Shipment).filter_by(
+            company_id=MockCompany.company_id
+        ).delete()
+        session.query(models.User).filter_by(user_id=MockUser.user_id).delete()
+        session.query(models.Company).filter_by(
+            company_id=MockCompany.company_id
+        ).delete()
+        session.commit()
 
 
 class TestShipment:
