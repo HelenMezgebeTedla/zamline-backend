@@ -1,3 +1,4 @@
+from database import Base
 from models.companies import Company, CompanyType, VerificationStatus
 from models.users import User, UserRole
 from models.trucks import Truck, BodyType, AvailabilityStatus
@@ -7,6 +8,7 @@ from models.reservations import Reservation, ReservationStatus
 from models.audit_logs import AuditLog
 
 __all__ = [
+    "Base",
     "Company",
     "CompanyType",
     "VerificationStatus",
