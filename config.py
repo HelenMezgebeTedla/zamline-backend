@@ -47,3 +47,4 @@ UNACCEPTED_CARGO_TYPES = {
     for item in os.getenv("UNACCEPTED_CARGO_TYPES", "").split(",")
     if item.strip()
 }
+REDIS_URL = os.getenv("REDIS_URL", "")

@@ -1,25 +1,126 @@
 import hashlib
 import hmac
+import json
 import logging
 import secrets
+import threading
+import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from config import JWT_SECRET, OTP_EXPIRE_MINUTES, OTP_MAX_ATTEMPTS
-from repositories.otp import (
-    create_otp,
-    delete_user_otps,
-    get_latest_otp,
-    increment_attempts,
-)
+from config import JWT_SECRET, OTP_EXPIRE_MINUTES, OTP_MAX_ATTEMPTS, REDIS_URL
 from security.email import send_otp_email
 
 logger = logging.getLogger(__name__)
 
 RESEND_COOLDOWN_SECONDS = 60
 OTP_LENGTH = 6
+KEY_PREFIX = "otp:"
+
+
+@dataclass
+class OTPRecord:
+    code_hash: str
+    expires_at: datetime
+    created_at: datetime
+    attempts: int = 0
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "code_hash": self.code_hash,
+                "expires_at": self.expires_at.isoformat(),
+                "created_at": self.created_at.isoformat(),
+                "attempts": self.attempts,
+            }
+        )
+
+    @classmethod
+    def from_json(cls, raw: str) -> "OTPRecord":
+        data = json.loads(raw)
+        return cls(
+            code_hash=data["code_hash"],
+            expires_at=datetime.fromisoformat(data["expires_at"]),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            attempts=data["attempts"],
+        )
+
+
+class _MemoryCache:
+    def __init__(self) -> None:
+        self._items: dict[str, tuple[str, float]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> str | None:
+        with self._lock:
+            item = self._items.get(key)
+            if item is None:
+                return None
+            value, expires_at = item
+            if time.monotonic() >= expires_at:
+                del self._items[key]
+                return None
+            return value
+
+    def set(self, key: str, value: str, ttl_seconds: float) -> None:
+        with self._lock:
+            self._items[key] = (value, time.monotonic() + ttl_seconds)
+
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._items.pop(key, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+
+
+class _RedisCache:
+    def __init__(self, url: str) -> None:
+        import redis
+
+        self._client = redis.Redis.from_url(url, decode_responses=True)
+
+    def get(self, key: str) -> str | None:
+        return self._client.get(key)
+
+    def set(self, key: str, value: str, ttl_seconds: float) -> None:
+        self._client.set(key, value, ex=max(1, int(ttl_seconds)))
+
+    def delete(self, key: str) -> None:
+        self._client.delete(key)
+
+
+_cache = _RedisCache(REDIS_URL) if REDIS_URL else _MemoryCache()
+
+
+def _key(user_id) -> str:
+    return f"{KEY_PREFIX}{user_id}"
+
+
+def _save(user_id, record: OTPRecord) -> None:
+    ttl = (record.expires_at - _now()).total_seconds()
+    if ttl <= 0:
+        _delete(user_id)
+        return
+    _cache.set(_key(user_id), record.to_json(), ttl)
+
+
+def _load(user_id) -> OTPRecord | None:
+    raw = _cache.get(_key(user_id))
+    return OTPRecord.from_json(raw) if raw else None
+
+
+def _delete(user_id) -> None:
+    _cache.delete(_key(user_id))
+
+
+def clear_otp_cache() -> None:
+    if isinstance(_cache, _MemoryCache):
+        _cache.clear()
 
 
 def _now() -> datetime:
@@ -57,26 +158,27 @@ def _invalid_code() -> HTTPException:
 
 def issue_otp(db: Session, user, enforce_cooldown: bool = False) -> bool:
     if enforce_cooldown:
-        latest = get_latest_otp(db, user.user_id)
+        latest = _load(user.user_id)
         if latest and _now() - _as_utc(latest.created_at) < timedelta(
             seconds=RESEND_COOLDOWN_SECONDS
         ):
             return False
 
     code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
-    delete_user_otps(db, user.user_id)
-    create_otp(
-        db,
+    _save(
         user.user_id,
-        _hash_code(user.user_id, code),
-        _now() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+        OTPRecord(
+            code_hash=_hash_code(user.user_id, code),
+            expires_at=_now() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+            created_at=_now(),
+        ),
     )
 
     try:
         send_otp_email(user.email, code)
     except Exception as exc:
         logger.error("Could not send OTP email: %s", type(exc).__name__)
-        delete_user_otps(db, user.user_id)
+        _delete(user.user_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not send the verification code. Try again later.",
@@ -85,27 +187,28 @@ def issue_otp(db: Session, user, enforce_cooldown: bool = False) -> bool:
 
 
 def check_otp(db: Session, user, code: str) -> None:
-    record = get_latest_otp(db, user.user_id)
+    record = _load(user.user_id)
     if record is None:
         raise _invalid_code()
 
     if _now() > _as_utc(record.expires_at):
-        delete_user_otps(db, user.user_id)
+        _delete(user.user_id)
         raise _invalid_code()
 
     if record.attempts >= OTP_MAX_ATTEMPTS:
-        delete_user_otps(db, user.user_id)
+        _delete(user.user_id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Too many attempts. Request a new code.",
         )
 
     if not hmac.compare_digest(record.code_hash, _hash_code(user.user_id, code)):
-        record = increment_attempts(db, record)
+        record.attempts += 1
+        _save(user.user_id, record)
         remaining = max(OTP_MAX_ATTEMPTS - record.attempts, 0)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid code. {remaining} attempts remaining.",
         )
 
-    delete_user_otps(db, user.user_id)
+    _delete(user.user_id)

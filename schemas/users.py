@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 
 from models.companies import CompanyType
 from schemas.companies import CompanyResponseSchema
@@ -13,6 +13,13 @@ class CompanyRegistrationSchema(BaseModel):
     first_name: str
     last_name: str
     password: str
+    confirm_password: str | None = None
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.confirm_password is not None and self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
 
 
 class UserUpdateSchema(BaseModel):

@@ -225,20 +225,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_audit_logs_user_id", "audit_logs", ["user_id"], unique=False)
     op.create_table(
-        "otp_codes",
-        sa.Column("otp_id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("code_hash", sa.String(length=64), nullable=False),
-        sa.Column("attempts", sa.Integer(), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("otp_id"),
-    )
-    op.create_index(
-        op.f("ix_otp_codes_user_id"), "otp_codes", ["user_id"], unique=False
-    )
-    op.create_table(
         "shipments",
         sa.Column("shipment_id", sa.UUID(), nullable=False),
         sa.Column("company_id", sa.UUID(), nullable=False),
@@ -509,8 +495,6 @@ def downgrade() -> None:
     op.drop_index("ix_shipments_required_body_type", table_name="shipments")
     op.drop_index(op.f("ix_shipments_company_id"), table_name="shipments")
     op.drop_table("shipments")
-    op.drop_index(op.f("ix_otp_codes_user_id"), table_name="otp_codes")
-    op.drop_table("otp_codes")
     op.drop_index("ix_audit_logs_user_id", table_name="audit_logs")
     op.drop_index("ix_audit_logs_entity", table_name="audit_logs")
     op.drop_index("ix_audit_logs_created_at", table_name="audit_logs")

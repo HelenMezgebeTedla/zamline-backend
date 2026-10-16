@@ -6,6 +6,34 @@ import pytest
 
 import models
 from config import JWT_ALGORITHM, JWT_SECRET, OTP_MAX_ATTEMPTS
+from models.users import User
+from services import otp as otp_service
+
+
+class _CachedOTP:
+    def __init__(self, user_id):
+        object.__setattr__(self, "_user_id", user_id)
+        object.__setattr__(self, "_record", otp_service._load(user_id))
+
+    def __getattr__(self, name):
+        return getattr(self._record, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._record, name, value)
+        otp_service._cache.set(
+            otp_service._key(self._user_id), self._record.to_json(), 600
+        )
+
+
+def _cached_otp(db_session):
+    return _CachedOTP(db_session.query(User).one().user_id)
+
+
+@pytest.fixture(autouse=True)
+def _clear_otp_cache():
+    otp_service.clear_otp_cache()
+    yield
+    otp_service.clear_otp_cache()
 
 
 def _actions(db_session, action_type: str) -> int:
@@ -261,7 +289,7 @@ class TestLoginAndOTP:
         payload = registration_payload()
         client.post("/users/register", json=payload)
         _login(client, payload)
-        record = db_session.query(models.OTPCode).one()
+        record = _cached_otp(db_session)
         record.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         db_session.commit()
 
@@ -304,7 +332,7 @@ class TestLoginAndOTP:
         response = _login(client, payload)
 
         assert response.status_code == 503
-        assert db_session.query(models.OTPCode).count() == 0
+        assert otp_service._load(db_session.query(User).one().user_id) is None
 
 
 class TestResendOTP:
@@ -342,7 +370,7 @@ class TestResendOTP:
         payload = registration_payload()
         client.post("/users/register", json=payload)
         _login(client, payload)
-        record = db_session.query(models.OTPCode).one()
+        record = _cached_otp(db_session)
         record.created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
         db_session.commit()
 
