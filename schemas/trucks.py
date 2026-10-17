@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 from typing import Optional
 
@@ -124,13 +125,10 @@ class TruckResponse(BaseModel):
     fuel_consumption_l_per_100km: float
     maintenance_per_km: Decimal
     availability_status: AvailabilityStatus
-
     current_location: Optional[str] = None
     available_from: datetime | None
-
     current_location: str | None
     available_from: datetime | None
-
     current_location: str | None
     available_from: datetime | None
 

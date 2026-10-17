@@ -59,7 +59,6 @@ if os.getenv("ENABLE_TEST_USER", "").lower() == "true":
     create_test_user()
 
 
-# -------------------------------------------------------------------- login
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

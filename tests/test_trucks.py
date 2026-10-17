@@ -46,7 +46,7 @@ def make_company(db, name, reg, company_type=models.CompanyType.FLEET, **extra):
 
 
 def make_user(db, company, email, role=models.UserRole.FLEET_MANAGER, **extra):
-   
+
     values = {
         "company_id": company.company_id,
         "first_name": email.split("@")[0].split(".")[0].title(),
@@ -267,8 +267,6 @@ def allocated_truck(
 
 
 class TestMockData:
-
-
     def test_fleet_manager_belongs_to_verified_fleet_company(
         self, fleet_manager, fleet_company
     ):
@@ -683,7 +681,7 @@ class TestTruck:
 
 class TestTruckSchemas:
     @pytest.mark.parametrize(
-       
+        "raw, expected",
         [
             ("baa 1001", "BAA 1001"),
             ("  BAA   1001  ", "BAA 1001"),
@@ -947,7 +945,7 @@ class TestCreateTruckService:
     def test_database_race_on_plate_is_turned_into_409(
         self, db_session, fleet_company, fleet_manager, monkeypatch
     ):
-        
+
         def raise_integrity(*args, **kwargs):
             raise IntegrityError("insert", {}, Exception("duplicate"))
 
@@ -1056,7 +1054,7 @@ class TestUpdateTruckService:
         assert error.value.status_code == 409
 
     @pytest.mark.parametrize(
-        [{"capacity_kg": 5000}, {"body_type": models.BodyType.BOX}]
+        "change", [{"capacity_kg": 5000}, {"body_type": models.BodyType.BOX}]
     )
     def test_allocated_truck_load_is_locked(
         self, db_session, fleet_company, fleet_manager, allocated_truck, change

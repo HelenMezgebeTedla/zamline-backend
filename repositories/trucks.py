@@ -1,3 +1,5 @@
+from __future__ import annotations  # Must be line 1
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -63,11 +65,6 @@ def list_available_company_trucks(db: Session, company_id: UUID):
 
 
 def get_active_reservation_for_truck(db: Session, truck_id: UUID):
-    """The reservation that currently ties this truck to a confirmed shipment.
-
-    Read-only use of the reservation and shipment tables (owned by matching
-    and shipments). Returns None when the truck is free.
-    """
     return (
         db.query(Reservation)
         .join(Shipment, Shipment.shipment_id == Reservation.shipment_id)
