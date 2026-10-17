@@ -4,9 +4,6 @@ from config import CORS_ORIGINS
 from routers.shipment_matches import router as shipment_matches_router
 from routers.users import router as users_router
 from routers.audit_logs import router as audit_logs_router
-from config import CORS_ORIGINS
-from routers.shipment_matches import router as shipment_matches_router
-from routers.users import router as users_router
 
 app = FastAPI(title="ZamLine", version="0.1.0")
 
