@@ -28,7 +28,6 @@ MOCK_PICKUP = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
 
 
 def make_company(db, name, reg, company_type=models.CompanyType.FLEET, **extra):
-    """A company row as Helen's registration + PACRA flow would leave it."""
     values = {
         "company_type": company_type,
         "business_name": name,
@@ -47,7 +46,7 @@ def make_company(db, name, reg, company_type=models.CompanyType.FLEET, **extra):
 
 
 def make_user(db, company, email, role=models.UserRole.FLEET_MANAGER, **extra):
-    """A user who has registered and verified their email OTP."""
+   
     values = {
         "company_id": company.company_id,
         "first_name": email.split("@")[0].split(".")[0].title(),
@@ -84,7 +83,6 @@ def make_truck(db, company, plate, **extra):
 
 
 def truck_payload(**overrides):
-    """Valid body for POST /trucks / TruckCreate."""
     body = {
         "plate_number": "BAD 4321",
         "truck_type": "Interlink",
@@ -109,7 +107,7 @@ def audit_events(db, action_type=None, entity_id=None):
 
 @pytest.fixture
 def fleet_company(db_session):
-    """Verified fleet company with private cost settings filled in."""
+
     return make_company(
         db_session,
         "Mwape Haulage Ltd",
@@ -172,7 +170,6 @@ def shipper_user(db_session, shipper_company):
 
 @pytest.fixture
 def audit_history(db_session, fleet_company, fleet_manager):
-    """Events Helen's feature writes before a fleet manager ever adds a truck."""
     for action in ("user_registered", "email_verified", "login_success"):
         db_session.add(
             models.AuditLog(
@@ -189,7 +186,6 @@ def audit_history(db_session, fleet_company, fleet_manager):
 
 @pytest.fixture
 def fleet_trucks(db_session, fleet_company, rival_company):
-    """A small fleet in every state, plus one truck from another company."""
     return {
         "flatbed": make_truck(
             db_session, fleet_company, "BAA 1001", current_location="Lusaka"
@@ -223,8 +219,6 @@ def fleet_trucks(db_session, fleet_company, rival_company):
 def allocated_truck(
     db_session, fleet_company, fleet_manager, shipper_company, shipper_user
 ):
-    """A truck tied to a confirmed shipment (stands in for Sandra's
-    shipments and Shamy's acceptance flow)."""
     truck = make_truck(
         db_session,
         fleet_company,
@@ -273,7 +267,7 @@ def allocated_truck(
 
 
 class TestMockData:
-    """The mock data itself must be valid, or every other test is misleading."""
+
 
     def test_fleet_manager_belongs_to_verified_fleet_company(
         self, fleet_manager, fleet_company
@@ -689,7 +683,7 @@ class TestTruck:
 
 class TestTruckSchemas:
     @pytest.mark.parametrize(
-        "raw, expected",
+       
         [
             ("baa 1001", "BAA 1001"),
             ("  BAA   1001  ", "BAA 1001"),
@@ -953,8 +947,7 @@ class TestCreateTruckService:
     def test_database_race_on_plate_is_turned_into_409(
         self, db_session, fleet_company, fleet_manager, monkeypatch
     ):
-        # Simulates two requests registering the same plate at the same time:
-        # the pre-check passes, then the unique constraint fires.
+        
         def raise_integrity(*args, **kwargs):
             raise IntegrityError("insert", {}, Exception("duplicate"))
 
@@ -1063,7 +1056,7 @@ class TestUpdateTruckService:
         assert error.value.status_code == 409
 
     @pytest.mark.parametrize(
-        "change", [{"capacity_kg": 5000}, {"body_type": models.BodyType.BOX}]
+        [{"capacity_kg": 5000}, {"body_type": models.BodyType.BOX}]
     )
     def test_allocated_truck_load_is_locked(
         self, db_session, fleet_company, fleet_manager, allocated_truck, change
@@ -1336,12 +1329,6 @@ class TestAllocationService:
 
 @pytest.fixture
 def api(db_session):
-    """Returns a function that builds a client acting as a given user.
-
-    Instead of a real login, the auth dependencies are swapped for the mock
-    user and company, the same way the app would see them after
-    Helen's login + verification checks pass.
-    """
 
     def as_user(user, company):
         def override_db():
