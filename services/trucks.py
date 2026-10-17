@@ -22,7 +22,31 @@ from schemas.trucks import (
     TruckRetireRequest,
     TruckUpdate,
 )
-from services.audit_logs import record_event
+from models.audit_logs import AuditLog
+
+
+def record_event(
+    db: Session,
+    action_type: str,
+    user_id: UUID | None = None,
+    company_id: UUID | None = None,
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
+    details: dict | None = None,
+):
+
+    log = AuditLog(
+        user_id=user_id,
+        company_id=company_id,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details,
+    )
+    db.add(log)
+    db.flush()
+    return log
+
 
 _LOAD_FIELDS = {"body_type", "capacity_kg"}
 
