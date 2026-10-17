@@ -201,7 +201,7 @@ def test_database_blocks_a_second_reservation_even_without_the_service(db_sessio
             )
         )
     with pytest.raises(IntegrityError):
-        db_session.flush()
+        db_session.commit()
 
 
 def contact(db, user_id, shipment_id=d.SHIP_1):
@@ -306,7 +306,7 @@ def _add_competing_fleets(factory, n: int) -> list[tuple[uuid.UUID, uuid.UUID]]:
                     verification_status=VerificationStatus.VERIFIED,
                 )
             )
-            db.flush()
+            db.commit()
             db.add(
                 User(
                     user_id=user,
@@ -330,7 +330,7 @@ def _add_competing_fleets(factory, n: int) -> list[tuple[uuid.UUID, uuid.UUID]]:
                     maintenance_per_km=Decimal("2.40"),
                 )
             )
-            db.flush()
+            db.commit()
             db.add(ShipmentMatch(match_id=match, shipment_id=d.SHIP_1, truck_id=truck))
             pairs.append((user, match))
         db.commit()

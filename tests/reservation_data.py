@@ -349,12 +349,10 @@ def matches():
 def insert_mock_rows(db: Session):
     for group in (companies(), users(), trucks(), shipments(), matches()):
         db.add_all(group)
-        db.flush()
-    db.commit()
+        db.commit()
 
 
 def reset_all(db: Session):
     for model in (Reservation, ShipmentMatch, Shipment, Truck, User, Company):
         db.query(model).delete(synchronize_session=False)
-    db.flush()
     insert_mock_rows(db)

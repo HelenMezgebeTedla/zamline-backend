@@ -12,7 +12,6 @@ from models.users import User, UserRole
 
 def create(db: Session, reservation: Reservation):
     db.add(reservation)
-    db.flush()
     return reservation
 
 
