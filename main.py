@@ -11,6 +11,14 @@ from routers.shipment_matches import router as shipment_matches_router
 from routers.trucks import router as trucks_router
 from security.password import hash_password, verify_password
 from security.tokens import create_access_token
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from config import CORS_ORIGINS
+from routers.companies import router as companies_router
+from routers.shipment_matches import router as shipment_matches_router
+from routers.shipments import router as shipments_router
+from routers.users import router as users_router
+from routers.audit_logs import router as audit_logs_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -81,6 +89,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             status_code=503, detail="JWT_SECRET is not set. Add it to your .env file."
         )
     return {"access_token": token, "token_type": "bearer"}
+app.include_router(users_router)
+app.include_router(audit_logs_router)
+app.include_router(companies_router)
+app.include_router(shipment_matches_router)
+app.include_router(shipments_router)
 
 
 @app.get("/health")
