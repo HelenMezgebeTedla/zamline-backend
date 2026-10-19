@@ -1,16 +1,8 @@
-import os
-from datetime import datetime, timezone
+from fastapi import FastAPI
 
-from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, EmailStr
-from sqlalchemy.orm import Session
-
-import models
-from database import Base, SessionLocal, engine, get_db
+from database import Base, engine
 from routers.shipment_matches import router as shipment_matches_router
 from routers.trucks import router as trucks_router
-from security.password import hash_password, verify_password
-from security.tokens import create_access_token
 from routers.companies import router as companies_router
 from routers.shipments import router as shipments_router
 from routers.users import router as users_router
