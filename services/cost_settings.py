@@ -79,7 +79,6 @@ def update_cost_settings(
     for field, value in updates.items():
         setattr(company, field, value)
 
-   
     record_event(
         db,
         "cost_settings_updated",

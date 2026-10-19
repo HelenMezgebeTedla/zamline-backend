@@ -61,6 +61,7 @@ def shipper_company(db_session):
     db_session.flush()
     return company
 
+
 class TestGetCostSettings:
     def test_returns_the_company_settings(self, db_session, fleet_company):
         company = get_cost_settings(db_session, fleet_company.company_id)
@@ -151,6 +152,7 @@ class TestUpdateCostSettings:
         assert log.details["updated_fields"] == ["driver_daily_allowance"]
         assert "500" not in str(log.details)
 
+
 @pytest.fixture
 def client(db_session, fleet_company, fleet_manager_user):
     app = FastAPI()
@@ -190,6 +192,7 @@ class TestCostSettingsApi:
         res = client.patch("/cost-settings", json={"other_costs": "50000"})
         assert res.status_code == 422
         assert res.json()["detail"]["fields"]["other_costs"]["limit"] == "20000.00"
+
 
 class TestCostSettingsRules:
     def test_value_exactly_at_the_limit_needs_no_confirmation(
