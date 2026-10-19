@@ -1,3 +1,4 @@
+import logging
 import secrets
 from functools import lru_cache
 
@@ -37,6 +38,8 @@ from services.companies import (
     reject,
     validate_company_fields,
 )
+
+logger = logging.getLogger(__name__)
 
 DELETION_GRACE_PERIOD_DAYS = 30
 OTP_SENT_MESSAGE = "If the account exists, a verification code has been sent"
@@ -268,11 +271,18 @@ def resend_otp(db: Session, data: ResendOTPSchema) -> dict:
 def request_password_reset(db: Session, data: ForgotPasswordSchema) -> dict:
     user = get_user_by_email(db, normalise_email(data.email))
 
-    if user is not None and user.is_active:
+    if user is None:
+        logger.warning("Password reset not sent: no account uses that email")
+    elif not user.is_active:
+        logger.warning("Password reset not sent: the account is disabled")
+    else:
         sent = otp_service.issue_otp(
             db, user, enforce_cooldown=True, purpose=otp_service.PURPOSE_RESET
         )
+        if not sent:
+            logger.warning("Password reset not sent: wait 60 seconds between codes")
         if sent:
+            logger.warning("Password reset code sent")
             create_audit_log(
                 db,
                 user_id=user.user_id,
