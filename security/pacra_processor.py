@@ -69,8 +69,6 @@ PDF_TEXT_PAGES = 2
 
 
 def read_pdf_text(file_path: str) -> str | None:
-    """Read the text inside a PDF that was made on a computer (like a PACRA
-    download). Needs no system programs. Returns None for scanned PDFs."""
     try:
         from pypdf import PdfReader
     except ImportError:

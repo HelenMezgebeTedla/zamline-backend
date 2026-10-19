@@ -127,6 +127,11 @@ def clear_otp_cache() -> None:
         _cache.clear()
 
 
+def _role_name(user) -> str:
+    role = getattr(user, "role", "")
+    return getattr(role, "value", role) or ""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -183,9 +188,9 @@ def issue_otp(
 
     try:
         if purpose == PURPOSE_RESET:
-            send_password_reset_email(user.email, code)
+            send_password_reset_email(user.email, code, role=_role_name(user))
         else:
-            send_otp_email(user.email, code)
+            send_otp_email(user.email, code, role=_role_name(user))
     except Exception as exc:
         logger.error("Could not send OTP email: %s", type(exc).__name__)
         _delete(user.user_id, purpose)

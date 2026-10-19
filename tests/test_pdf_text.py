@@ -7,7 +7,6 @@ from security.pacra_processor import PDFOCRProcessor, read_pdf_text
 
 
 def make_text_pdf(lines: list[str]) -> bytes:
-    """Build a small real PDF with a text layer, like a PACRA download."""
     text_ops = "".join(
         f"BT /F1 12 Tf 50 {750 - 20 * index} Td ({line}) Tj ET\n"
         for index, line in enumerate(lines)
@@ -52,7 +51,6 @@ def upload_dir(monkeypatch, tmp_path):
 
 @pytest.fixture
 def no_ocr_tools(monkeypatch):
-    """Act like a laptop without poppler or tesseract installed."""
 
     def _missing(*args, **kwargs):
         raise AssertionError("OCR must not be needed for a text PDF")

@@ -201,7 +201,7 @@ def sample_reservation(
 def mock_otp_email(monkeypatch):
     captured: list[str] = []
 
-    def _capture(_: str, code: str) -> None:
+    def _capture(_: str, code: str, **_kwargs) -> None:
         captured.append(code)
 
     monkeypatch.setattr("services.otp.send_otp_email", _capture)

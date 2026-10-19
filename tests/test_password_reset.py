@@ -130,3 +130,14 @@ class TestResetPassword:
             _reset(client, email, wrong)
         assert _reset(client, email, real).status_code == 400
         assert _login(client, email, account["password"]).status_code == 200
+
+
+class TestEmailLinkRole:
+    def test_reset_email_gets_the_account_role(self, client, account, monkeypatch):
+        sent = []
+        monkeypatch.setattr(
+            "services.otp.send_password_reset_email",
+            lambda email, code, **kwargs: sent.append(kwargs),
+        )
+        _forgot(client, account["company_email"])
+        assert sent == [{"role": "shipper"}]

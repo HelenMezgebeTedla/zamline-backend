@@ -2,6 +2,7 @@ import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
 from html import escape
+from urllib.parse import quote
 
 from config import (
     EMAIL_FROM,
@@ -10,6 +11,7 @@ from config import (
     EMAIL_PORT,
     EMAIL_USE_TLS,
     EMAIL_USERNAME,
+    FRONTEND_URL,
     OTP_EXPIRE_MINUTES,
 )
 
@@ -26,6 +28,7 @@ FONT = "'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 
 VERIFY = {
     "subject": "{code} is your ZamLine verification code",
+    "page": "verify-email",
     "label": "Email verification",
     "title": "Verify your email",
     "intro": "Enter this 6-digit code on the ZamLine verification page.",
@@ -33,6 +36,7 @@ VERIFY = {
 }
 RESET = {
     "subject": "{code} is your ZamLine password reset code",
+    "page": "forgot-password",
     "label": "Password reset",
     "title": "Reset your password",
     "intro": "Enter this 6-digit code on the ZamLine reset password page.",
@@ -52,7 +56,54 @@ def build_otp_text(otp_code: str, content: dict = VERIFY) -> str:
     )
 
 
-def build_otp_html(otp_code: str, content: dict = VERIFY) -> str:
+PORTAL_FOR_ROLE = {"shipper": "shipper", "fleet_manager": "fleet"}
+
+
+def code_link(to_email: str, otp_code: str, role: str | None, content: dict):
+    portal = PORTAL_FOR_ROLE.get(role or "")
+    if not portal or not FRONTEND_URL:
+        return None
+    return (
+        f"{FRONTEND_URL}/{portal}/{content['page']}"
+        f"#email={quote(to_email, safe='')}&code={otp_code}"
+    )
+
+
+def _code_box(code: str, link: str | None) -> str:
+    box = (
+        f"font-family:'Courier New',monospace;font-size:22px;font-weight:700;"
+        f"color:{NAVY};"
+    )
+    if link:
+        inner = (
+            f'<a href="{escape(link, quote=True)}" target="_blank" '
+            f'style="display:block;padding:10px 22px;text-decoration:none;{box}">'
+            f"{code}</a>"
+        )
+        label = "Tap your code"
+        hint = "Tap the code and ZamLine fills it in for you."
+    else:
+        inner = (
+            f'<span style="display:block;padding:10px 22px;{box}'
+            f'-webkit-user-select:all;user-select:all;">{code}</span>'
+        )
+        label = "Your code"
+        hint = "Double-click the code to select it."
+    return f"""<p style="margin:0 0 6px;font-family:{FONT};font-size:12px;
+                    font-weight:600;letter-spacing:1px;text-transform:uppercase;
+                    color:{MUTED};">{label}</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" align="center"
+                 style="margin:0 auto 8px;"><tr>
+            <td style="border:2px solid {TEAL};border-radius:10px;
+                       background:#ffffff;">{inner}</td>
+          </tr></table>
+          <p style="margin:0 0 24px;font-family:{FONT};font-size:12px;color:{MUTED};">
+            {hint}</p>"""
+
+
+def build_otp_html(
+    otp_code: str, content: dict = VERIFY, link: str | None = None
+) -> str:
     code = escape(otp_code)
     digits = "".join(
         f'<td style="width:44px;height:56px;background:{BOX_BG};border-radius:10px;'
@@ -88,18 +139,7 @@ def build_otp_html(otp_code: str, content: dict = VERIFY) -> str:
             {content["intro"]}</p>
           <table role="presentation" cellpadding="0" cellspacing="0" align="center"
                  style="margin:0 auto 20px;"><tr>{digits}</tr></table>
-          <p style="margin:0 0 6px;font-family:{FONT};font-size:12px;font-weight:600;
-                    letter-spacing:1px;text-transform:uppercase;color:{MUTED};">
-            Copy your code</p>
-          <table role="presentation" cellpadding="0" cellspacing="0" align="center"
-                 style="margin:0 auto 8px;"><tr>
-            <td style="border:2px dashed {TEAL};border-radius:10px;padding:10px 22px;
-                       background:#ffffff;font-family:'Courier New',monospace;
-                       font-size:22px;font-weight:700;color:{NAVY};
-                       -webkit-user-select:all;user-select:all;">{code}</td>
-          </tr></table>
-          <p style="margin:0 0 24px;font-family:{FONT};font-size:12px;color:{MUTED};">
-            Tap and hold (or double-click) the code above to copy it.</p>
+          {_code_box(code, link)}
           <p style="margin:0 0 8px;font-family:{FONT};font-size:14px;color:{MUTED};">
             This code expires in <strong style="color:{NAVY};">
             {OTP_EXPIRE_MINUTES} minutes</strong>.</p>
@@ -127,14 +167,15 @@ def sender_address() -> str:
 
 
 def build_otp_message(
-    to_email: str, otp_code: str, content: dict = VERIFY
+    to_email: str, otp_code: str, content: dict = VERIFY, role: str | None = None
 ) -> EmailMessage:
+    link = code_link(to_email, otp_code, role, content)
     message = EmailMessage()
     message["From"] = sender_address()
     message["To"] = to_email
     message["Subject"] = content["subject"].format(code=otp_code)
     message.set_content(build_otp_text(otp_code, content))
-    message.add_alternative(build_otp_html(otp_code, content), subtype="html")
+    message.add_alternative(build_otp_html(otp_code, content, link), subtype="html")
     return message
 
 
@@ -149,9 +190,11 @@ def _send(message: EmailMessage) -> None:
         server.send_message(message)
 
 
-def send_otp_email(to_email: str, otp_code: str) -> None:
-    _send(build_otp_message(to_email, otp_code, VERIFY))
+def send_otp_email(to_email: str, otp_code: str, role: str | None = None) -> None:
+    _send(build_otp_message(to_email, otp_code, VERIFY, role))
 
 
-def send_password_reset_email(to_email: str, otp_code: str) -> None:
-    _send(build_otp_message(to_email, otp_code, RESET))
+def send_password_reset_email(
+    to_email: str, otp_code: str, role: str | None = None
+) -> None:
+    _send(build_otp_message(to_email, otp_code, RESET, role))

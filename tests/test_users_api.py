@@ -337,7 +337,7 @@ class TestLoginAndOTP:
     def test_failed_email_delivery_returns_503_and_stores_no_code(
         self, client, db_session, monkeypatch, registration_payload
     ):
-        def _fail(_email, _code):
+        def _fail(_email, _code, **_kwargs):
             raise RuntimeError("smtp down")
 
         payload = registration_payload()
@@ -539,7 +539,7 @@ class TestSignupOTP:
     def test_register_succeeds_even_if_email_fails(
         self, client, monkeypatch, registration_payload
     ):
-        def _fail(_email, _code):
+        def _fail(_email, _code, **_kwargs):
             raise RuntimeError("smtp down")
 
         monkeypatch.setattr("services.otp.send_otp_email", _fail)
