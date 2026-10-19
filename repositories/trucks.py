@@ -1,4 +1,4 @@
-from __future__ import annotations  # Must be line 1
+from __future__ import annotations
 
 from uuid import UUID
 
