@@ -20,7 +20,12 @@ from schemas.companies import (
 )
 from security.file_storage import FileStorage
 from security.pacra_models import CertificateProcessingUnavailable
-from security.pacra_processor import OCRProcessor, PDFOCRProcessor, QRProcessor
+from security.pacra_processor import (
+    OCRProcessor,
+    PDFOCRProcessor,
+    QRProcessor,
+    read_pdf_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -383,11 +388,19 @@ def check_certificate_consistency(
 
 
 def _read_certificate(
-    file_path: str, content_type: str
+    file_path: str, content_type: str, matches=lambda text: False
 ) -> tuple[str | None, str | None]:
     if content_type == "application/pdf":
-        ocr = PDFOCRProcessor().extract_text(file_path)
-        return None, ocr.extracted_text if ocr.success else None
+        pdf_text = read_pdf_text(file_path)
+        if pdf_text and matches(pdf_text):
+            return pdf_text, None
+        try:
+            ocr = PDFOCRProcessor().extract_text(file_path)
+        except CertificateProcessingUnavailable:
+            if pdf_text:
+                return pdf_text, None
+            raise
+        return pdf_text, ocr.extracted_text if ocr.success else None
 
     qr = QRProcessor().scan(file_path)
     ocr = OCRProcessor().extract_text(file_path)
@@ -409,7 +422,15 @@ def verify_pacra_certificate(
     content_type = storage.get_file_content_type(file_path)
 
     try:
-        qr_text, ocr_text = _read_certificate(file_path, content_type)
+        qr_text, ocr_text = _read_certificate(
+            file_path,
+            content_type,
+            lambda text: (
+                check_certificate_consistency(
+                    company.business_name, company.registration_number, text, None
+                ).verified
+            ),
+        )
     except CertificateProcessingUnavailable as exc:
         storage.delete_file(file_path)
         logger.error("Certificate verification is unavailable: %s", exc)

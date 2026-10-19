@@ -3,7 +3,8 @@ from uuid import UUID
 import pytest
 
 import models
-from security.pacra_processor import PDFOCRProcessor, read_pdf_text
+from security.pacra_models import OCRResult
+from security.pacra_processor import read_pdf_text
 
 
 def make_text_pdf(lines: list[str]) -> bytes:
@@ -51,11 +52,27 @@ def upload_dir(monkeypatch, tmp_path):
 
 @pytest.fixture
 def no_ocr_tools(monkeypatch):
+    from pdf2image.exceptions import PDFInfoNotInstalledError
 
     def _missing(*args, **kwargs):
-        raise AssertionError("OCR must not be needed for a text PDF")
+        raise PDFInfoNotInstalledError("poppler is not installed")
 
     monkeypatch.setattr("pdf2image.convert_from_path", _missing)
+
+
+@pytest.fixture
+def ocr_must_not_run(monkeypatch):
+    def _fail(self, path):
+        raise AssertionError("OCR should not run when the PDF text matches")
+
+    monkeypatch.setattr("services.companies.PDFOCRProcessor.extract_text", _fail)
+
+
+def ocr_returns(monkeypatch, text):
+    monkeypatch.setattr(
+        "services.companies.PDFOCRProcessor.extract_text",
+        lambda self, path: OCRResult(success=True, extracted_text=text),
+    )
 
 
 class TestReadPdfText:
@@ -76,13 +93,6 @@ class TestReadPdfText:
         path.write_bytes(make_text_pdf(["Hi"]))
         assert read_pdf_text(str(path)) is None
 
-    def test_processor_uses_text_without_ocr(self, tmp_path, no_ocr_tools):
-        path = tmp_path / "cert.pdf"
-        path.write_bytes(certificate_pdf("Lusaka Freight Ltd", "120199999999"))
-        result = PDFOCRProcessor().extract_text(str(path))
-        assert result.success
-        assert "Lusaka Freight Ltd" in result.extracted_text
-
 
 class TestCertificateUploadWithTextPdf:
     def _upload(self, client, session, content):
@@ -92,8 +102,13 @@ class TestCertificateUploadWithTextPdf:
             files={"certificate_file": ("pacra.pdf", content, "application/pdf")},
         )
 
+    def _status(self, db_session, session):
+        company = db_session.get(models.Company, UUID(session["company_id"]))
+        db_session.refresh(company)
+        return company
+
     def test_matching_certificate_is_verified(
-        self, client, db_session, register_and_login, no_ocr_tools
+        self, client, db_session, register_and_login, ocr_must_not_run
     ):
         session = register_and_login(
             "shipper",
@@ -123,3 +138,31 @@ class TestCertificateUploadWithTextPdf:
         assert company.verification_status == models.VerificationStatus.RESUBMIT
         assert "registration number" in company.verification_failure_reason
         assert "business name" in company.verification_failure_reason
+
+    def test_ocr_is_tried_when_pdf_text_does_not_match(
+        self, client, db_session, register_and_login, monkeypatch
+    ):
+        session = register_and_login(
+            "shipper",
+            business_name="Friends At Heart Foundation",
+            registration_number="120180010448",
+        )
+        ocr_returns(
+            monkeypatch,
+            "Company Name: Friends At Heart Foundation\n"
+            "Registration Number: 120180010448",
+        )
+        pdf = certificate_pdf("F r i e n d s  A t  H e a r t", "1 2 0 1 8")
+        assert self._upload(client, session, pdf).status_code == 200
+        company = self._status(db_session, session)
+        assert company.verification_status == models.VerificationStatus.VERIFIED
+
+    def test_scanned_pdf_without_ocr_tools_is_not_judged(
+        self, client, db_session, register_and_login, no_ocr_tools
+    ):
+        session = register_and_login("shipper")
+        scanned = make_text_pdf(["Hi"])
+        response = self._upload(client, session, scanned)
+        assert response.status_code == 503
+        company = self._status(db_session, session)
+        assert company.verification_status == models.VerificationStatus.PENDING

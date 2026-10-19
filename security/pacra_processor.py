@@ -89,10 +89,6 @@ def read_pdf_text(file_path: str) -> str | None:
 
 class PDFOCRProcessor:
     def extract_text(self, file_path: str) -> OCRResult:
-        text = read_pdf_text(file_path)
-        if text:
-            return OCRResult(success=True, extracted_text=text)
-
         try:
             import pytesseract
             from pdf2image import convert_from_path
