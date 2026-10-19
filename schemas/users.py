@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import BaseModel, EmailStr, model_validator
 
 from models.companies import CompanyType
@@ -28,14 +30,21 @@ class UserUpdateSchema(BaseModel):
     email: EmailStr | None = None
 
 
+class Portal(str, Enum):
+    SHIPPER = "shipper"
+    FLEET = "fleet"
+
+
 class UserLoginSchema(BaseModel):
     email: EmailStr
     password: str
+    portal: Portal
 
 
 class OTPVerifySchema(BaseModel):
     email: EmailStr
     code: str
+    portal: Portal
 
 
 class ResendOTPSchema(BaseModel):

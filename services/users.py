@@ -50,6 +50,19 @@ PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_BYTES = 128
 PERSON_NAME_MAX = 50
 
+ROLE_FOR_PORTAL = {"shipper": "shipper", "fleet": "fleet_manager"}
+PORTAL_LABEL = {"shipper": "Shipper", "fleet_manager": "Fleet Manager"}
+
+
+def ensure_portal_matches_role(user, portal) -> None:
+    role = enum_value(user.role)
+    if ROLE_FOR_PORTAL.get(enum_value(portal)) != role:
+        label = PORTAL_LABEL.get(role, "another")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This is a {label} account. Please log in on the {label} page.",
+        )
+
 
 @lru_cache(maxsize=1)
 def _unknown_user_hash() -> str:
@@ -192,6 +205,8 @@ def login_user(db: Session, data: UserLoginSchema) -> dict:
             detail="Account is disabled",
         )
 
+    ensure_portal_matches_role(user, data.portal)
+
     otp_service.issue_otp(db, user)
     create_audit_log(
         db,
@@ -235,6 +250,8 @@ def verify_otp(db: Session, data: OTPVerifySchema) -> dict:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
         )
+
+    ensure_portal_matches_role(user, data.portal)
 
     create_audit_log(
         db,

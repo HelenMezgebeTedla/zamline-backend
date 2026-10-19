@@ -1,5 +1,7 @@
 import pytest
 
+PORTAL = "shipper"
+
 NEW_PASSWORD = "BrandNewPass456"
 
 
@@ -25,7 +27,9 @@ def _reset(client, email, code, password=NEW_PASSWORD, confirm=None):
 
 
 def _login(client, email, password):
-    return client.post("/users/login", json={"email": email, "password": password})
+    return client.post(
+        "/users/login", json={"email": email, "password": password, "portal": PORTAL}
+    )
 
 
 class TestForgotPassword:
@@ -94,7 +98,8 @@ class TestResetPassword:
         email = account["company_email"]
         _forgot(client, email)
         response = client.post(
-            "/users/verify-otp", json={"email": email, "code": mock_otp_email[-1]}
+            "/users/verify-otp",
+            json={"email": email, "code": mock_otp_email[-1], "portal": PORTAL},
         )
         assert response.status_code == 400
 

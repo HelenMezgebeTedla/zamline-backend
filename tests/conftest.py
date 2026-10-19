@@ -255,13 +255,21 @@ def register_and_login(client, mock_otp_email, registration_payload):
 
         login = client.post(
             "/users/login",
-            json={"email": payload["company_email"], "password": payload["password"]},
+            json={
+                "email": payload["company_email"],
+                "password": payload["password"],
+                "portal": company_type,
+            },
         )
         assert login.status_code == 200, login.text
 
         verified = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": mock_otp_email[-1]},
+            json={
+                "email": payload["company_email"],
+                "code": mock_otp_email[-1],
+                "portal": company_type,
+            },
         )
         assert verified.status_code == 200, verified.text
 

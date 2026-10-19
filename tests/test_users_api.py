@@ -9,6 +9,8 @@ from config import JWT_ALGORITHM, JWT_SECRET, OTP_MAX_ATTEMPTS
 from models.users import User
 from services import otp as otp_service
 
+PORTAL = "shipper"
+
 
 class _CachedOTP:
     def __init__(self, user_id):
@@ -47,7 +49,11 @@ def _wrong_code(real_code: str) -> str:
 def _login(client, payload: dict):
     return client.post(
         "/users/login",
-        json={"email": payload["company_email"], "password": payload["password"]},
+        json={
+            "email": payload["company_email"],
+            "password": payload["password"],
+            "portal": PORTAL,
+        },
     )
 
 
@@ -184,11 +190,19 @@ class TestLoginAndOTP:
 
         unknown = client.post(
             "/users/login",
-            json={"email": "nobody@zamline-tests.com", "password": "StrongPass123"},
+            json={
+                "email": "nobody@zamline-tests.com",
+                "password": "StrongPass123",
+                "portal": PORTAL,
+            },
         )
         wrong = client.post(
             "/users/login",
-            json={"email": payload["company_email"], "password": "WrongPass123"},
+            json={
+                "email": payload["company_email"],
+                "password": "WrongPass123",
+                "portal": PORTAL,
+            },
         )
 
         assert unknown.status_code == wrong.status_code == 401
@@ -201,7 +215,11 @@ class TestLoginAndOTP:
 
         response = client.post(
             "/users/login",
-            json={"email": payload["company_email"], "password": "a" * 5000},
+            json={
+                "email": payload["company_email"],
+                "password": "a" * 5000,
+                "portal": PORTAL,
+            },
         )
 
         assert response.status_code == 401
@@ -231,7 +249,11 @@ class TestLoginAndOTP:
 
         response = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": mock_otp_email[0]},
+            json={
+                "email": payload["company_email"],
+                "code": mock_otp_email[0],
+                "portal": PORTAL,
+            },
         )
 
         assert response.status_code == 200
@@ -251,11 +273,15 @@ class TestLoginAndOTP:
 
         wrong = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": _wrong_code(code)},
+            json={
+                "email": payload["company_email"],
+                "code": _wrong_code(code),
+                "portal": PORTAL,
+            },
         )
         right = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": code},
+            json={"email": payload["company_email"], "code": code, "portal": PORTAL},
         )
 
         assert wrong.status_code == 400
@@ -268,7 +294,11 @@ class TestLoginAndOTP:
         client.post("/users/register", json=payload)
         mock_otp_email.clear()
         _login(client, payload)
-        body = {"email": payload["company_email"], "code": mock_otp_email[0]}
+        body = {
+            "email": payload["company_email"],
+            "code": mock_otp_email[0],
+            "portal": PORTAL,
+        }
 
         assert client.post("/users/verify-otp", json=body).status_code == 200
         assert client.post("/users/verify-otp", json=body).status_code == 400
@@ -285,13 +315,17 @@ class TestLoginAndOTP:
         for _ in range(OTP_MAX_ATTEMPTS):
             response = client.post(
                 "/users/verify-otp",
-                json={"email": payload["company_email"], "code": _wrong_code(code)},
+                json={
+                    "email": payload["company_email"],
+                    "code": _wrong_code(code),
+                    "portal": PORTAL,
+                },
             )
             assert response.status_code == 400
 
         final = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": code},
+            json={"email": payload["company_email"], "code": code, "portal": PORTAL},
         )
 
         assert final.status_code == 400
@@ -310,7 +344,11 @@ class TestLoginAndOTP:
 
         response = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": mock_otp_email[0]},
+            json={
+                "email": payload["company_email"],
+                "code": mock_otp_email[0],
+                "portal": PORTAL,
+            },
         )
 
         assert response.status_code == 400
@@ -322,7 +360,7 @@ class TestLoginAndOTP:
 
         response = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": code},
+            json={"email": payload["company_email"], "code": code, "portal": PORTAL},
         )
 
         assert response.status_code == 422
@@ -330,7 +368,11 @@ class TestLoginAndOTP:
     def test_verify_for_unknown_email_is_rejected(self, client):
         response = client.post(
             "/users/verify-otp",
-            json={"email": "nobody@zamline-tests.com", "code": "123456"},
+            json={
+                "email": "nobody@zamline-tests.com",
+                "code": "123456",
+                "portal": PORTAL,
+            },
         )
         assert response.status_code == 400
 
@@ -532,7 +574,11 @@ class TestSignupOTP:
         assert len(mock_otp_email) == 1
         verified = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": mock_otp_email[-1]},
+            json={
+                "email": payload["company_email"],
+                "code": mock_otp_email[-1],
+                "portal": PORTAL,
+            },
         )
         assert verified.status_code == 200
 
@@ -554,3 +600,77 @@ class TestSignupOTP:
             json=registration_payload(confirm_password="Different123"),
         )
         assert response.status_code == 422
+
+
+class TestPortalRoleAccess:
+    def _register(self, client, registration_payload, company_type):
+        payload = registration_payload(company_type)
+        assert client.post("/users/register", json=payload).status_code == 201
+        return payload
+
+    def _login(self, client, payload, portal, password=None):
+        return client.post(
+            "/users/login",
+            json={
+                "email": payload["company_email"],
+                "password": password or payload["password"],
+                "portal": portal,
+            },
+        )
+
+    def test_shipper_cannot_log_in_on_the_fleet_portal(
+        self, client, registration_payload, mock_otp_email
+    ):
+        payload = self._register(client, registration_payload, "shipper")
+        sent_before = len(mock_otp_email)
+        response = self._login(client, payload, "fleet")
+        assert response.status_code == 403
+        assert "Shipper account" in response.json()["detail"]
+        assert len(mock_otp_email) == sent_before
+
+    def test_fleet_manager_cannot_log_in_on_the_shipper_portal(
+        self, client, registration_payload, mock_otp_email
+    ):
+        payload = self._register(client, registration_payload, "fleet")
+        response = self._login(client, payload, "shipper")
+        assert response.status_code == 403
+        assert "Fleet Manager account" in response.json()["detail"]
+
+    def test_each_role_can_log_in_on_its_own_portal(self, client, registration_payload):
+        shipper = self._register(client, registration_payload, "shipper")
+        fleet = self._register(client, registration_payload, "fleet")
+        assert self._login(client, shipper, "shipper").status_code == 200
+        assert self._login(client, fleet, "fleet").status_code == 200
+
+    def test_wrong_password_on_wrong_portal_does_not_reveal_the_role(
+        self, client, registration_payload
+    ):
+        payload = self._register(client, registration_payload, "shipper")
+        response = self._login(client, payload, "fleet", password="WrongPass123")
+        assert response.status_code == 401
+
+    def test_code_cannot_be_used_on_the_other_portal(
+        self, client, registration_payload, mock_otp_email
+    ):
+        payload = self._register(client, registration_payload, "shipper")
+        assert self._login(client, payload, "shipper").status_code == 200
+        response = client.post(
+            "/users/verify-otp",
+            json={
+                "email": payload["company_email"],
+                "code": mock_otp_email[-1],
+                "portal": "fleet",
+            },
+        )
+        assert response.status_code == 403
+        assert "access_token" not in response.json()
+
+    @pytest.mark.parametrize("portal", [None, "admin", ""])
+    def test_portal_is_required_and_must_be_known(
+        self, client, registration_payload, portal
+    ):
+        payload = self._register(client, registration_payload, "shipper")
+        body = {"email": payload["company_email"], "password": payload["password"]}
+        if portal is not None:
+            body["portal"] = portal
+        assert client.post("/users/login", json=body).status_code == 422
