@@ -161,8 +161,45 @@ class TestOTPEmail:
         assert server.host == "smtp.zamline-tests.com"
         assert server.actions == ["starttls", "login:mailer"]
         assert server.message["To"] == "user@zamline-tests.com"
-        assert server.message["From"] == "no-reply@zamline-tests.com"
-        assert "123456" in server.message.get_payload()
+        assert server.message["From"] == "ZamLine <no-reply@zamline-tests.com>"
+        assert server.message["Subject"] == "123456 is your ZamLine verification code"
+        plain = server.message.get_body(preferencelist=("plain",)).get_content()
+        html = server.message.get_body(preferencelist=("html",)).get_content()
+        assert "123456" in plain
+        assert "Verify your email" in html
+        for digit in "123456":
+            assert f">{digit}</td>" in html
+
+    def test_email_matches_the_zamline_design(self):
+        html = email_module.build_otp_html("482915")
+        assert "ZamLine" in html
+        assert "#0b1f3a" in html and "#1a9bb8" in html
+        assert "expires in" in html
+
+    def test_code_can_be_copied_in_one_piece(self):
+        html = email_module.build_otp_html("482915")
+        assert "Copy your code" in html
+        assert 'user-select:all;">482915</td>' in html
+
+    def test_sender_name_is_kept_when_already_given(self, monkeypatch):
+        monkeypatch.setattr(email_module, "EMAIL_FROM", "Nexa Team <team@x.com>")
+        assert email_module.sender_address() == "Nexa Team <team@x.com>"
+
+    def test_email_has_no_logo_image(self):
+        message = email_module.build_otp_message("user@zamline-tests.com", "123456")
+        types = [part.get_content_type() for part in message.walk()]
+        assert "image/png" not in types
+        assert "<img" not in message.get_body(("html",)).get_content()
+
+    def test_password_reset_email_uses_the_same_design(self, smtp_settings):
+        email_module.send_password_reset_email("user@zamline-tests.com", "654321")
+        message = FakeSMTP.instances[0].message
+        assert message["Subject"] == "654321 is your ZamLine password reset code"
+        assert message["From"] == "ZamLine <no-reply@zamline-tests.com>"
+        html = message.get_body(("html",)).get_content()
+        assert "Reset your password" in html
+        assert 'user-select:all;">654321</td>' in html
+        assert "654321" in message.get_body(("plain",)).get_content()
 
     def test_tls_can_be_disabled_for_local_relays(self, smtp_settings, monkeypatch):
         monkeypatch.setattr(email_module, "EMAIL_USE_TLS", False)

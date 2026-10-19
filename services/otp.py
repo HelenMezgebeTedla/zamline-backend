@@ -12,13 +12,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from config import JWT_SECRET, OTP_EXPIRE_MINUTES, OTP_MAX_ATTEMPTS, REDIS_URL
-from security.email import send_otp_email
+from security.email import send_otp_email, send_password_reset_email
 
 logger = logging.getLogger(__name__)
 
 RESEND_COOLDOWN_SECONDS = 60
 OTP_LENGTH = 6
 KEY_PREFIX = "otp:"
+PURPOSE_LOGIN = "login"
+PURPOSE_RESET = "reset"
 
 
 @dataclass
@@ -97,25 +99,27 @@ class _RedisCache:
 _cache = _RedisCache(REDIS_URL) if REDIS_URL else _MemoryCache()
 
 
-def _key(user_id) -> str:
-    return f"{KEY_PREFIX}{user_id}"
+def _key(user_id, purpose: str = PURPOSE_LOGIN) -> str:
+    if purpose == PURPOSE_LOGIN:
+        return f"{KEY_PREFIX}{user_id}"
+    return f"{KEY_PREFIX}{purpose}:{user_id}"
 
 
-def _save(user_id, record: OTPRecord) -> None:
+def _save(user_id, record: OTPRecord, purpose: str = PURPOSE_LOGIN) -> None:
     ttl = (record.expires_at - _now()).total_seconds()
     if ttl <= 0:
-        _delete(user_id)
+        _delete(user_id, purpose)
         return
-    _cache.set(_key(user_id), record.to_json(), ttl)
+    _cache.set(_key(user_id, purpose), record.to_json(), ttl)
 
 
-def _load(user_id) -> OTPRecord | None:
-    raw = _cache.get(_key(user_id))
+def _load(user_id, purpose: str = PURPOSE_LOGIN) -> OTPRecord | None:
+    raw = _cache.get(_key(user_id, purpose))
     return OTPRecord.from_json(raw) if raw else None
 
 
-def _delete(user_id) -> None:
-    _cache.delete(_key(user_id))
+def _delete(user_id, purpose: str = PURPOSE_LOGIN) -> None:
+    _cache.delete(_key(user_id, purpose))
 
 
 def clear_otp_cache() -> None:
@@ -156,9 +160,11 @@ def _invalid_code() -> HTTPException:
     )
 
 
-def issue_otp(db: Session, user, enforce_cooldown: bool = False) -> bool:
+def issue_otp(
+    db: Session, user, enforce_cooldown: bool = False, purpose: str = PURPOSE_LOGIN
+) -> bool:
     if enforce_cooldown:
-        latest = _load(user.user_id)
+        latest = _load(user.user_id, purpose)
         if latest and _now() - _as_utc(latest.created_at) < timedelta(
             seconds=RESEND_COOLDOWN_SECONDS
         ):
@@ -172,13 +178,17 @@ def issue_otp(db: Session, user, enforce_cooldown: bool = False) -> bool:
             expires_at=_now() + timedelta(minutes=OTP_EXPIRE_MINUTES),
             created_at=_now(),
         ),
+        purpose,
     )
 
     try:
-        send_otp_email(user.email, code)
+        if purpose == PURPOSE_RESET:
+            send_password_reset_email(user.email, code)
+        else:
+            send_otp_email(user.email, code)
     except Exception as exc:
         logger.error("Could not send OTP email: %s", type(exc).__name__)
-        _delete(user.user_id)
+        _delete(user.user_id, purpose)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not send the verification code. Try again later.",
@@ -186,17 +196,17 @@ def issue_otp(db: Session, user, enforce_cooldown: bool = False) -> bool:
     return True
 
 
-def check_otp(db: Session, user, code: str) -> None:
-    record = _load(user.user_id)
+def check_otp(db: Session, user, code: str, purpose: str = PURPOSE_LOGIN) -> None:
+    record = _load(user.user_id, purpose)
     if record is None:
         raise _invalid_code()
 
     if _now() > _as_utc(record.expires_at):
-        _delete(user.user_id)
+        _delete(user.user_id, purpose)
         raise _invalid_code()
 
     if record.attempts >= OTP_MAX_ATTEMPTS:
-        _delete(user.user_id)
+        _delete(user.user_id, purpose)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Too many attempts. Request a new code.",
@@ -204,11 +214,11 @@ def check_otp(db: Session, user, code: str) -> None:
 
     if not hmac.compare_digest(record.code_hash, _hash_code(user.user_id, code)):
         record.attempts += 1
-        _save(user.user_id, record)
+        _save(user.user_id, record, purpose)
         remaining = max(OTP_MAX_ATTEMPTS - record.attempts, 0)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid code. {remaining} attempts remaining.",
         )
 
-    _delete(user.user_id)
+    _delete(user.user_id, purpose)

@@ -98,8 +98,8 @@ class TestRegistration:
     def test_duplicate_registration_number_is_rejected(
         self, client, db_session, registration_payload
     ):
-        first = registration_payload(registration_number="REG777777")
-        second = registration_payload(registration_number="reg777777")
+        first = registration_payload(registration_number="120777777")
+        second = registration_payload(registration_number=" 120 777 777 ")
 
         assert client.post("/users/register", json=first).status_code == 201
         assert client.post("/users/register", json=second).status_code == 409
@@ -114,14 +114,22 @@ class TestRegistration:
             {"password": ""},
             {"business_name": "   "},
             {"business_name": "x" * 101},
-            {"registration_number": "ab"},
+            {"registration_number": "12"},
             {"registration_number": "REG 123!"},
-            {"registration_number": "A" * 21},
+            {"registration_number": "1" * 21},
+            {"registration_number": "REG123456"},
+            {"registration_number": "12345ABC"},
+            {"business_name": "12345"},
+            {"business_name": "Freight <script>"},
             {"phone_number": "not-a-phone"},
             {"phone_number": "+260"},
             {"first_name": "   "},
             {"first_name": "x" * 51},
             {"last_name": "x" * 51},
+            {"first_name": "Helen2"},
+            {"first_name": "12345"},
+            {"last_name": "Mezgebe!"},
+            {"last_name": "<b>Owner</b>"},
         ],
     )
     def test_invalid_input_is_rejected_without_creating_records(

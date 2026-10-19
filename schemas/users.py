@@ -42,6 +42,23 @@ class ResendOTPSchema(BaseModel):
     email: EmailStr
 
 
+class ForgotPasswordSchema(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordSchema(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+    confirm_password: str
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
 class MessageSchema(BaseModel):
     message: str
 

@@ -39,3 +39,7 @@ def require_role(*allowed_roles: UserRole):
 def require_verified_company(company=Depends(get_current_company)):
     ensure_verified(company)
     return company
+
+
+require_shipper = require_role(UserRole.SHIPPER)
+require_fleet_manager = require_role(UserRole.FLEET_MANAGER)

@@ -31,8 +31,10 @@ REGISTRATION_NUMBER_MAX = 20
 PHONE_MAX = 15
 FAILURE_REASON_MAX = 500
 
-REGISTRATION_NUMBER_PATTERN = re.compile(r"^[A-Z0-9]{5,20}$")
+REGISTRATION_NUMBER_PATTERN = re.compile(r"^[0-9]{5,20}$")
 PHONE_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
+PERSON_NAME_PATTERN = re.compile(r"^[^\W\d_]+(?:[ '\-][^\W\d_]+)*$")
+BUSINESS_NAME_PATTERN = re.compile(r"^[\w &.,'()/\-]+$")
 
 ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/jpg"}
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
@@ -90,6 +92,13 @@ def clean_text(value: str | None, label: str, max_length: int) -> str:
     return cleaned
 
 
+def clean_person_name(value: str | None, label: str, max_length: int) -> str:
+    name = clean_text(value, label, max_length)
+    if not PERSON_NAME_PATTERN.match(name):
+        reject(f"{label} can only contain letters, spaces, hyphens and apostrophes")
+    return name
+
+
 def validate_company_fields(
     business_name: str | None = None,
     registration_number: str | None = None,
@@ -97,15 +106,21 @@ def validate_company_fields(
 ) -> dict[str, str]:
     cleaned: dict[str, str] = {}
     if business_name is not None:
-        cleaned["business_name"] = clean_text(
-            business_name, "Business name", BUSINESS_NAME_MAX
-        )
+        name = clean_text(business_name, "Business name", BUSINESS_NAME_MAX)
+        if not BUSINESS_NAME_PATTERN.match(name) or not re.search(r"[^\W\d_]", name):
+            reject(
+                "Business name must contain letters and can only use letters, "
+                "digits, spaces and & . , ' - ( ) /"
+            )
+        cleaned["business_name"] = name
     if registration_number is not None:
         number = clean_text(
-            registration_number, "Registration number", REGISTRATION_NUMBER_MAX
-        ).upper()
+            re.sub(r"\s", "", registration_number or ""),
+            "Registration number",
+            REGISTRATION_NUMBER_MAX,
+        )
         if not REGISTRATION_NUMBER_PATTERN.match(number):
-            reject("Registration number must be 5 to 20 letters or digits")
+            reject("Registration number must contain only digits (5 to 20)")
         cleaned["registration_number"] = number
     if phone_number is not None:
         phone = clean_text(

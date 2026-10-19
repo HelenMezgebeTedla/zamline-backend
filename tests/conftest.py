@@ -205,6 +205,7 @@ def mock_otp_email(monkeypatch):
         captured.append(code)
 
     monkeypatch.setattr("services.otp.send_otp_email", _capture)
+    monkeypatch.setattr("services.otp.send_password_reset_email", _capture)
     return captured
 
 
@@ -231,12 +232,12 @@ def registration_payload():
         number = next(sequence)
         payload = {
             "business_name": f"Test Business {number}",
-            "registration_number": f"REG{number:06d}",
+            "registration_number": f"1201{number:06d}",
             "company_email": f"owner{number}@zamline-tests.com",
             "phone_number": "+260971234567",
             "company_type": company_type,
             "first_name": "Test",
-            "last_name": f"Owner{number}",
+            "last_name": "Owner",
             "password": "StrongPass123",
         }
         payload.update(overrides)

@@ -4,7 +4,8 @@ import jwt
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from models.companies import VerificationStatus
+from models.companies import CompanyType, VerificationStatus
+from models.users import UserRole
 from repositories.companies import get_company_by_id
 from repositories.users import get_user_by_id
 from security.tokens import decode_access_token
@@ -29,12 +30,28 @@ def authenticate_token(db: Session, token: str):
     return user
 
 
+ROLE_FOR_COMPANY_TYPE = {
+    CompanyType.SHIPPER: UserRole.SHIPPER,
+    CompanyType.FLEET: UserRole.FLEET_MANAGER,
+}
+
+
+def ensure_role_matches_company(user, company) -> None:
+    expected = ROLE_FOR_COMPANY_TYPE.get(CompanyType(company.company_type))
+    if expected is None or UserRole(user.role) != expected:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account role does not match the company type",
+        )
+
+
 def get_company_for_user(db: Session, user):
     company = get_company_by_id(db, user.company_id)
     if company is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Company not found"
         )
+    ensure_role_matches_company(user, company)
     return company
 
 
