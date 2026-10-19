@@ -23,10 +23,13 @@ def detail(r: Reservation):
     return ReservationDetailOut(
         **ReservationOut.model_validate(r).model_dump(),
         fleet_company_name=r.company.business_name,
+        shipper_company_name=r.shipment.company.business_name,
         plate_number=r.truck.plate_number,
         origin_address=r.shipment.origin_address,
         destination_address=r.shipment.destination_address,
         cargo_type=r.shipment.cargo_type,
+        weight_kg=r.shipment.weight_kg,
+        pickup_time=r.shipment.pickup_time,
         proposed_amount=r.shipment.proposed_amount,
         shipment_status=r.shipment.status,
     )

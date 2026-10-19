@@ -45,6 +45,9 @@ def test_accept_returns_201_with_details(client, db_session):
     assert body["shipment_status"] == "confirmed"
     assert body["fleet_company_name"] == "Phiri Haulage Ltd"
     assert body["plate_number"] == "MOCK BAZ 1234"
+    assert body["shipper_company_name"] == "Chipatala Grains Ltd"
+    assert body["weight_kg"] > 0
+    assert body["pickup_time"]
 
 
 def test_second_company_gets_409(client, db_session):

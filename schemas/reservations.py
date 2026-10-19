@@ -32,10 +32,13 @@ class ReservationOut(BaseModel):
 
 class ReservationDetailOut(ReservationOut):
     fleet_company_name: str
+    shipper_company_name: str
     plate_number: str
     origin_address: str
     destination_address: str
     cargo_type: str
+    weight_kg: float
+    pickup_time: datetime
     proposed_amount: Decimal
     shipment_status: ShipmentStatus
 
