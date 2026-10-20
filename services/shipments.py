@@ -23,7 +23,6 @@ from repositories.shipments import (
 )
 from schemas.shipments import ShipmentCreate, ShipmentUpdate
 
-ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search"
 ORS_TIMEOUT_SECONDS = 10
 ZAMBIA_TIME = timezone(timedelta(hours=2), "CAT")
 
@@ -38,12 +37,13 @@ def validate_cargo(cargo_type: str) -> None:
 
 def geocode_address(address: str) -> tuple[float, float] | None:
     api_key = os.getenv("ORS_API_KEY")
-    if not api_key:
+    geocode_url = os.getenv("ORS_GEOCODE_URL")
+    if not api_key or not geocode_url:
         raise HTTPException(status_code=503, detail="Address lookup is not available")
 
     query = urlencode({"text": address, "size": 1, "boundary.country": "ZM"})
     request = Request(
-        f"{ORS_GEOCODE_URL}?{query}",
+        f"{geocode_url}?{query}",
         headers={"Authorization": api_key, "Accept": "application/json"},
     )
 
