@@ -201,10 +201,11 @@ def sample_reservation(
 def mock_otp_email(monkeypatch):
     captured: list[str] = []
 
-    def _capture(_: str, code: str) -> None:
+    def _capture(_: str, code: str, **_kwargs) -> None:
         captured.append(code)
 
     monkeypatch.setattr("services.otp.send_otp_email", _capture)
+    monkeypatch.setattr("services.otp.send_password_reset_email", _capture)
     return captured
 
 
@@ -231,12 +232,12 @@ def registration_payload():
         number = next(sequence)
         payload = {
             "business_name": f"Test Business {number}",
-            "registration_number": f"REG{number:06d}",
+            "registration_number": f"1201{number:06d}",
             "company_email": f"owner{number}@zamline-tests.com",
             "phone_number": "+260971234567",
             "company_type": company_type,
             "first_name": "Test",
-            "last_name": f"Owner{number}",
+            "last_name": "Owner",
             "password": "StrongPass123",
         }
         payload.update(overrides)
@@ -254,13 +255,21 @@ def register_and_login(client, mock_otp_email, registration_payload):
 
         login = client.post(
             "/users/login",
-            json={"email": payload["company_email"], "password": payload["password"]},
+            json={
+                "email": payload["company_email"],
+                "password": payload["password"],
+                "portal": company_type,
+            },
         )
         assert login.status_code == 200, login.text
 
         verified = client.post(
             "/users/verify-otp",
-            json={"email": payload["company_email"], "code": mock_otp_email[-1]},
+            json={
+                "email": payload["company_email"],
+                "code": mock_otp_email[-1],
+                "portal": company_type,
+            },
         )
         assert verified.status_code == 200, verified.text
 

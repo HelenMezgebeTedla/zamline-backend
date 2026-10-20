@@ -1,3 +1,4 @@
+import logging
 import secrets
 from functools import lru_cache
 
@@ -18,8 +19,10 @@ from repositories.users import (
 )
 from schemas.users import (
     CompanyRegistrationSchema,
+    ForgotPasswordSchema,
     OTPVerifySchema,
     ResendOTPSchema,
+    ResetPasswordSchema,
     UserLoginSchema,
     UserUpdateSchema,
 )
@@ -27,7 +30,7 @@ from security.password import hash_password, verify_password
 from security.tokens import create_access_token
 from services import otp as otp_service
 from services.companies import (
-    clean_text,
+    clean_person_name,
     enum_value,
     get_company_profile,
     iso_or_none,
@@ -36,12 +39,29 @@ from services.companies import (
     validate_company_fields,
 )
 
+logger = logging.getLogger(__name__)
+
 DELETION_GRACE_PERIOD_DAYS = 30
 OTP_SENT_MESSAGE = "If the account exists, a verification code has been sent"
+RESET_SENT_MESSAGE = "If the account exists, a password reset code has been sent"
+RESET_DONE_MESSAGE = "Your password has been reset. You can now log in."
 
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_BYTES = 128
 PERSON_NAME_MAX = 50
+
+ROLE_FOR_PORTAL = {"shipper": "shipper", "fleet": "fleet_manager"}
+PORTAL_LABEL = {"shipper": "Shipper", "fleet_manager": "Fleet Manager"}
+
+
+def ensure_portal_matches_role(user, portal) -> None:
+    role = enum_value(user.role)
+    if ROLE_FOR_PORTAL.get(enum_value(portal)) != role:
+        label = PORTAL_LABEL.get(role, "another")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This is a {label} account. Please log in on the {label} page.",
+        )
 
 
 @lru_cache(maxsize=1)
@@ -78,8 +98,8 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
         registration_number=data.registration_number,
         phone_number=data.phone_number,
     )
-    first_name = clean_text(data.first_name, "First name", PERSON_NAME_MAX)
-    last_name = clean_text(data.last_name, "Last name", PERSON_NAME_MAX)
+    first_name = clean_person_name(data.first_name, "First name", PERSON_NAME_MAX)
+    last_name = clean_person_name(data.last_name, "Last name", PERSON_NAME_MAX)
     validate_password(data.password)
 
     email = normalise_email(data.company_email)
@@ -185,6 +205,8 @@ def login_user(db: Session, data: UserLoginSchema) -> dict:
             detail="Account is disabled",
         )
 
+    ensure_portal_matches_role(user, data.portal)
+
     otp_service.issue_otp(db, user)
     create_audit_log(
         db,
@@ -229,6 +251,8 @@ def verify_otp(db: Session, data: OTPVerifySchema) -> dict:
             detail="Account is disabled",
         )
 
+    ensure_portal_matches_role(user, data.portal)
+
     create_audit_log(
         db,
         user_id=user.user_id,
@@ -261,6 +285,69 @@ def resend_otp(db: Session, data: ResendOTPSchema) -> dict:
     return {"message": OTP_SENT_MESSAGE}
 
 
+def request_password_reset(db: Session, data: ForgotPasswordSchema) -> dict:
+    user = get_user_by_email(db, normalise_email(data.email))
+
+    if user is None:
+        logger.warning("Password reset not sent: no account uses that email")
+    elif not user.is_active:
+        logger.warning("Password reset not sent: the account is disabled")
+    else:
+        sent = otp_service.issue_otp(
+            db, user, enforce_cooldown=True, purpose=otp_service.PURPOSE_RESET
+        )
+        if not sent:
+            logger.warning("Password reset not sent: wait 60 seconds between codes")
+        if sent:
+            logger.warning("Password reset code sent")
+            create_audit_log(
+                db,
+                user_id=user.user_id,
+                company_id=user.company_id,
+                action_type="password_reset_requested",
+                entity_type="user",
+                entity_id=user.user_id,
+            )
+
+    return {"message": RESET_SENT_MESSAGE}
+
+
+def reset_password(db: Session, data: ResetPasswordSchema) -> dict:
+    code = otp_service.validate_code(data.code)
+    validate_password(data.new_password)
+    user = get_user_by_email(db, normalise_email(data.email))
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired code",
+        )
+
+    try:
+        otp_service.check_otp(db, user, code, purpose=otp_service.PURPOSE_RESET)
+    except HTTPException:
+        create_audit_log(
+            db,
+            user_id=user.user_id,
+            company_id=user.company_id,
+            action_type="password_reset_failed",
+            entity_type="user",
+            entity_id=user.user_id,
+        )
+        raise
+
+    update_user(db, user, password_hash=hash_password(data.new_password))
+    create_audit_log(
+        db,
+        user_id=user.user_id,
+        company_id=user.company_id,
+        action_type="password_reset",
+        entity_type="user",
+        entity_id=user.user_id,
+    )
+    return {"message": RESET_DONE_MESSAGE}
+
+
 def get_current_user_profile(user) -> dict:
     return user_to_dict(user)
 
@@ -269,11 +356,13 @@ def update_current_user(db: Session, user, data: UserUpdateSchema) -> dict:
     changes: dict[str, str] = {}
 
     if data.first_name is not None:
-        changes["first_name"] = clean_text(
+        changes["first_name"] = clean_person_name(
             data.first_name, "First name", PERSON_NAME_MAX
         )
     if data.last_name is not None:
-        changes["last_name"] = clean_text(data.last_name, "Last name", PERSON_NAME_MAX)
+        changes["last_name"] = clean_person_name(
+            data.last_name, "Last name", PERSON_NAME_MAX
+        )
     if data.email is not None:
         new_email = normalise_email(data.email)
         if new_email != user.email:

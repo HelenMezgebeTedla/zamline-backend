@@ -5,11 +5,13 @@ from database import get_db
 from dependency import get_current_user
 from schemas.users import (
     CompanyRegistrationSchema,
+    ForgotPasswordSchema,
     LoginResponseSchema,
     MessageSchema,
     OTPVerifySchema,
     RegistrationResponseSchema,
     ResendOTPSchema,
+    ResetPasswordSchema,
     TokenSchema,
     UserLoginSchema,
     UserResponseSchema,
@@ -20,7 +22,9 @@ from services.users import (
     get_current_user_profile,
     login_user,
     register_user,
+    request_password_reset,
     resend_otp,
+    reset_password,
     update_current_user,
     verify_otp,
 )
@@ -50,6 +54,16 @@ def verify_otp_route(data: OTPVerifySchema, db: Session = Depends(get_db)):
 @router.post("/resend-otp", response_model=MessageSchema)
 def resend_otp_route(data: ResendOTPSchema, db: Session = Depends(get_db)):
     return resend_otp(db, data)
+
+
+@router.post("/forgot-password", response_model=MessageSchema)
+def forgot_password_route(data: ForgotPasswordSchema, db: Session = Depends(get_db)):
+    return request_password_reset(db, data)
+
+
+@router.post("/reset-password", response_model=MessageSchema)
+def reset_password_route(data: ResetPasswordSchema, db: Session = Depends(get_db)):
+    return reset_password(db, data)
 
 
 @router.get("/me", response_model=UserResponseSchema)

@@ -2,6 +2,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 
 from database import Base, engine
+from config import CORS_ORIGINS
+from routers.reservations import router as reservations_router
+from routers.companies import router as companies_router
 from routers.shipment_matches import router as shipment_matches_router
 from routers.trucks import router as trucks_router
 from routers.companies import router as companies_router
@@ -28,6 +31,7 @@ app.include_router(users_router)
 app.include_router(audit_logs_router)
 app.include_router(companies_router)
 app.include_router(shipment_matches_router)
+app.include_router(reservations_router)
 app.include_router(shipments_router)
 
 
