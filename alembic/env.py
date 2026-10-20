@@ -1,26 +1,37 @@
+import os
 from logging.config import fileConfig
 
-from alembic import context
-from sqlalchemy import engine_from_config, pool
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
 
-from database import database_url
-from models import Base
+from alembic import context
+
+load_dotenv()
 
 config = context.config
+
+from database import database_url  # noqa: E402
+
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+import models  # noqa: E402,F401  (registers every table on Base)
+from database import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Run migrations in 'offline' mode (generates SQL without a database)."""
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=url,
         target_metadata=target_metadata,
         literal_binds=True,
-        compare_type=True,
         dialect_opts={"paramstyle": "named"},
     )
 
@@ -29,6 +40,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run migrations in 'online' mode (connects to the database)."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -36,11 +48,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
