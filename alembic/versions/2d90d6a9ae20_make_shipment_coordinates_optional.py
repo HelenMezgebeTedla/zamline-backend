@@ -1,11 +1,3 @@
-"""make shipment coordinates optional
-
-Revision ID: 2d90d6a9ae20
-Revises: 8dd6ce7658ec
-Create Date: 2026-10-20 12:14:09.430641
-
-"""
-
 from typing import Sequence, Union
 
 from alembic import op
