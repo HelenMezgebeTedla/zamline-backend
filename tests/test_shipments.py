@@ -336,6 +336,9 @@ class TestShipment:
 
     def test_geocode_address_reads_ors_coordinates(self, monkeypatch):
         monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setenv(
+            "ORS_GEOCODE_URL", "https://api.openrouteservice.org/geocode/search"
+        )
         monkeypatch.setattr(
             shipment_service,
             "urlopen",
@@ -349,6 +352,9 @@ class TestShipment:
     def test_geocode_address_sends_key_in_header_not_url(self, monkeypatch):
         captured = {}
         monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setenv(
+            "ORS_GEOCODE_URL", "https://api.openrouteservice.org/geocode/search"
+        )
         monkeypatch.setattr(
             shipment_service,
             "urlopen",
@@ -365,6 +371,9 @@ class TestShipment:
 
     def test_geocode_address_returns_none_when_not_found(self, monkeypatch):
         monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setenv(
+            "ORS_GEOCODE_URL", "https://api.openrouteservice.org/geocode/search"
+        )
         monkeypatch.setattr(shipment_service, "urlopen", ors_response([]))
 
         assert shipment_service.geocode_address("Nowhere Land") is None
@@ -382,6 +391,9 @@ class TestShipment:
             raise URLError("down")
 
         monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setenv(
+            "ORS_GEOCODE_URL", "https://api.openrouteservice.org/geocode/search"
+        )
         monkeypatch.setattr(shipment_service, "urlopen", broken_urlopen)
 
         with pytest.raises(HTTPException) as error:
