@@ -71,6 +71,6 @@ def get_active_reservation_for_truck(db: Session, truck_id: UUID):
             Reservation.status == ReservationStatus.ACCEPTED,
             Shipment.status == ShipmentStatus.CONFIRMED,
         )
-        .order_by(Reservation.created_at.desc())
+        .order_by(Reservation.reserved_at.desc())
         .first()
     )
