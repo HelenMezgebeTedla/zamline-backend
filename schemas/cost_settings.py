@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +28,8 @@ class CostSettingsUpdate(BaseModel):
     other_costs: Decimal | None = Field(
         default=None, ge=0, max_digits=10, decimal_places=2
     )
+    currency: str = "ZMW"
+    updated_at: datetime | None = None
     confirm_extreme_values: bool = False
 
     def money_updates(self) -> dict[str, Decimal | None]:
