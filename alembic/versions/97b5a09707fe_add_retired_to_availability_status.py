@@ -1,11 +1,3 @@
-"""add retired to availability status
-
-Revision ID: 97b5a09707fe
-Revises: 8dd6ce7658ec
-Create Date: 2026-10-20 09:18:20.237230
-
-"""
-
 from typing import Sequence, Union
 
 from alembic import op
