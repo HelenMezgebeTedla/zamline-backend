@@ -44,11 +44,11 @@ class Shipment(Base):
         UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False, index=True
     )
     origin_address = Column(String(250), nullable=False)
-    origin_latitude = Column(Numeric(9, 6, asdecimal=False), nullable=False)
-    origin_longitude = Column(Numeric(9, 6, asdecimal=False), nullable=False)
+    origin_latitude = Column(Numeric(9, 6, asdecimal=False), nullable=True)
+    origin_longitude = Column(Numeric(9, 6, asdecimal=False), nullable=True)
     destination_address = Column(String(250), nullable=False)
-    destination_latitude = Column(Numeric(9, 6, asdecimal=False), nullable=False)
-    destination_longitude = Column(Numeric(9, 6, asdecimal=False), nullable=False)
+    destination_latitude = Column(Numeric(9, 6, asdecimal=False), nullable=True)
+    destination_longitude = Column(Numeric(9, 6, asdecimal=False), nullable=True)
     cargo_type = Column(String(20), nullable=False)
     weight_kg = Column(Float, nullable=False)
     required_body_type = Column(

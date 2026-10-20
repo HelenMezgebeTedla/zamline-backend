@@ -47,11 +47,11 @@ class ShipmentResponse(BaseModel):
     company_id: UUID
     user_id: UUID
     origin_address: str
-    origin_latitude: float
-    origin_longitude: float
+    origin_latitude: float | None = None
+    origin_longitude: float | None = None
     destination_address: str
-    destination_latitude: float
-    destination_longitude: float
+    destination_latitude: float | None = None
+    destination_longitude: float | None = None
     cargo_type: str
     weight_kg: float
     required_body_type: BodyType
