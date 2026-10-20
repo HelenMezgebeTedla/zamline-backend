@@ -1,6 +1,7 @@
 from __future__ import annotations
 from uuid import UUID
 from sqlalchemy.orm import Session
+
 from models.reservations import Reservation, ReservationStatus
 from models.shipments import Shipment, ShipmentStatus
 from models.trucks import AvailabilityStatus, BodyType, Truck
@@ -58,18 +59,4 @@ def list_available_company_trucks(db: Session, company_id: UUID):
             Truck.availability_status == AvailabilityStatus.AVAILABLE,
         )
         .all()
-    )
-
-
-def get_active_reservation_for_truck(db: Session, truck_id: UUID):
-    return (
-        db.query(Reservation)
-        .join(Shipment, Shipment.shipment_id == Reservation.shipment_id)
-        .filter(
-            Reservation.truck_id == truck_id,
-            Reservation.status == ReservationStatus.ACCEPTED,
-            Shipment.status == ShipmentStatus.CONFIRMED,
-        )
-        .order_by(Reservation.reserved_at.desc())
-        .first()
     )

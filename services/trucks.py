@@ -86,6 +86,7 @@ def create_truck(
         db.commit()
         db.refresh(truck)
         return truck
+    
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Truck registration already exists")
