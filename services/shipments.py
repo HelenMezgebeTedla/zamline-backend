@@ -1,3 +1,4 @@
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -17,6 +18,8 @@ from repositories.shipments import (
 )
 from schemas.shipments import ShipmentCreate, ShipmentUpdate
 
+ZAMBIA_TIME = timezone(timedelta(hours=2), "CAT")
+
 
 def validate_cargo(cargo_type: str) -> None:
     if cargo_type.strip().lower() in UNACCEPTED_CARGO_TYPES:
@@ -26,6 +29,16 @@ def validate_cargo(cargo_type: str) -> None:
         )
 
 
+def combine_pickup(pickup_date: date, pickup_time: time) -> datetime:
+    pickup = datetime.combine(pickup_date, pickup_time, tzinfo=ZAMBIA_TIME)
+    if pickup <= datetime.now(ZAMBIA_TIME):
+        raise HTTPException(
+            status_code=422,
+            detail="Pickup date and time must be in the future",
+        )
+    return pickup
+
+
 def create_shipment(
     db: Session,
     company_id: UUID,
@@ -33,12 +46,14 @@ def create_shipment(
     data: ShipmentCreate,
 ):
     validate_cargo(data.cargo_type)
+    pickup = combine_pickup(data.pickup_date, data.pickup_time)
 
     shipment = create_shipment_record(
         db,
         company_id=company_id,
         user_id=user_id,
-        **data.model_dump(),
+        pickup_time=pickup,
+        **data.model_dump(exclude={"pickup_date", "pickup_time"}),
     )
     db.commit()
     db.refresh(shipment)
@@ -83,6 +98,19 @@ def update_shipment(
 
     if "cargo_type" in changes:
         validate_cargo(changes["cargo_type"])
+
+    if "pickup_date" in changes:
+        pickup_date = changes.pop("pickup_date")
+        pickup_time = changes.pop("pickup_time")
+        changes["pickup_time"] = combine_pickup(pickup_date, pickup_time)
+
+    if "origin_address" in changes:
+        changes["origin_latitude"] = None
+        changes["origin_longitude"] = None
+
+    if "destination_address" in changes:
+        changes["destination_latitude"] = None
+        changes["destination_longitude"] = None
 
     update_shipment_record(db, shipment, **changes)
     db.commit()
