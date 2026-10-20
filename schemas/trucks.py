@@ -48,7 +48,6 @@ class TruckCreate(BaseModel):
 
 
 class TruckUpdate(BaseModel):
-
     model_config = ConfigDict(extra="forbid")
 
     truck_type: str | None = Field(default=None, min_length=2, max_length=30)
@@ -139,5 +138,5 @@ class TruckAllocationResponse(BaseModel):
     truck_id: UUID
     plate_number: str
     availability_status: AvailabilityStatus
-    allocation_status: str 
+    allocation_status: str
     allocated_shipment: AllocatedShipment | None
