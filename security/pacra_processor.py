@@ -64,6 +64,29 @@ class OCRProcessor:
         return _text_result(text, "No text found in image")
 
 
+MIN_PDF_TEXT_CHARACTERS = 30
+PDF_TEXT_PAGES = 2
+
+
+def read_pdf_text(file_path: str) -> str | None:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return None
+
+    try:
+        reader = PdfReader(file_path)
+        pages = reader.pages[:PDF_TEXT_PAGES]
+        text = "\n".join(page.extract_text() or "" for page in pages)
+    except Exception as exc:
+        logger.warning("PDF text reading failed: %s", type(exc).__name__)
+        return None
+
+    if len("".join(text.split())) < MIN_PDF_TEXT_CHARACTERS:
+        return None
+    return text.strip()
+
+
 class PDFOCRProcessor:
     def extract_text(self, file_path: str) -> OCRResult:
         try:
