@@ -60,3 +60,17 @@ def list_available_company_trucks(db: Session, company_id: UUID):
         )
         .all()
     )
+
+def get_active_reservation_for_truck(db: Session, truck_id: UUID):
+    return (
+        db.query(Reservation)
+        .join(Shipment, Shipment.shipment_id == Reservation.shipment_id)
+        .filter(
+            Reservation.truck_id == truck_id,
+            Reservation.status == ReservationStatus.ACCEPTED,
+            Shipment.status == ShipmentStatus.CONFIRMED,
+        )
+        
+        .order_by(Reservation.created_at.desc())
+        .first()
+    )
