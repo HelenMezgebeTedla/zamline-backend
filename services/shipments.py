@@ -1,3 +1,9 @@
+import json
+import os
+from datetime import date, datetime, time, timedelta, timezone
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -17,6 +23,10 @@ from repositories.shipments import (
 )
 from schemas.shipments import ShipmentCreate, ShipmentUpdate
 
+ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search"
+ORS_TIMEOUT_SECONDS = 10
+ZAMBIA_TIME = timezone(timedelta(hours=2), "CAT")
+
 
 def validate_cargo(cargo_type: str) -> None:
     if cargo_type.strip().lower() in UNACCEPTED_CARGO_TYPES:
@@ -26,6 +36,52 @@ def validate_cargo(cargo_type: str) -> None:
         )
 
 
+def geocode_address(address: str) -> tuple[float, float] | None:
+    api_key = os.getenv("ORS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Address lookup is not available")
+
+    query = urlencode({"text": address, "size": 1, "boundary.country": "ZM"})
+    request = Request(
+        f"{ORS_GEOCODE_URL}?{query}",
+        headers={"Authorization": api_key, "Accept": "application/json"},
+    )
+
+    try:
+        with urlopen(request, timeout=ORS_TIMEOUT_SECONDS) as response:
+            data = json.load(response)
+        features = data.get("features") or []
+        if not features:
+            return None
+        longitude, latitude = features[0]["geometry"]["coordinates"][:2]
+    except (URLError, TimeoutError, ValueError, KeyError, IndexError, TypeError):
+        raise HTTPException(
+            status_code=503, detail="Address lookup is not available"
+        ) from None
+
+    return float(latitude), float(longitude)
+
+
+def locate(address: str, label: str) -> tuple[float, float]:
+    coordinates = geocode_address(address)
+    if coordinates is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{label} address could not be found",
+        )
+    return coordinates
+
+
+def combine_pickup(pickup_date: date, pickup_time: time) -> datetime:
+    pickup = datetime.combine(pickup_date, pickup_time, tzinfo=ZAMBIA_TIME)
+    if pickup <= datetime.now(ZAMBIA_TIME):
+        raise HTTPException(
+            status_code=422,
+            detail="Pickup date and time must be in the future",
+        )
+    return pickup
+
+
 def create_shipment(
     db: Session,
     company_id: UUID,
@@ -33,12 +89,22 @@ def create_shipment(
     data: ShipmentCreate,
 ):
     validate_cargo(data.cargo_type)
+    pickup = combine_pickup(data.pickup_date, data.pickup_time)
+    origin_latitude, origin_longitude = locate(data.origin_address, "Origin")
+    destination_latitude, destination_longitude = locate(
+        data.destination_address, "Destination"
+    )
 
     shipment = create_shipment_record(
         db,
         company_id=company_id,
         user_id=user_id,
-        **data.model_dump(),
+        origin_latitude=origin_latitude,
+        origin_longitude=origin_longitude,
+        destination_latitude=destination_latitude,
+        destination_longitude=destination_longitude,
+        pickup_time=pickup,
+        **data.model_dump(exclude={"pickup_date", "pickup_time"}),
     )
     db.commit()
     db.refresh(shipment)
@@ -83,6 +149,21 @@ def update_shipment(
 
     if "cargo_type" in changes:
         validate_cargo(changes["cargo_type"])
+
+    if "pickup_date" in changes:
+        pickup_date = changes.pop("pickup_date")
+        pickup_time = changes.pop("pickup_time")
+        changes["pickup_time"] = combine_pickup(pickup_date, pickup_time)
+
+    if "origin_address" in changes:
+        latitude, longitude = locate(changes["origin_address"], "Origin")
+        changes["origin_latitude"] = latitude
+        changes["origin_longitude"] = longitude
+
+    if "destination_address" in changes:
+        latitude, longitude = locate(changes["destination_address"], "Destination")
+        changes["destination_latitude"] = latitude
+        changes["destination_longitude"] = longitude
 
     update_shipment_record(db, shipment, **changes)
     db.commit()

@@ -1,30 +1,55 @@
+import io
+import json
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from urllib.error import URLError
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
 import models
 from database import get_db
 from routers.shipments import require_verified_company, router, shipper
+from services import shipments as shipment_service
 
 PICKUP_TIME = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+
+KNOWN_ADDRESSES = {
+    "Cairo Road, Lusaka": (-15.4167, 28.2833),
+    "Broadway, Ndola": (-12.9587, 28.6366),
+    "Kitwe Town Centre": (-12.8024, 28.2132),
+}
+
+
+def future_date(days=7):
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
+def fake_geocode(address):
+    return KNOWN_ADDRESSES.get(address)
+
+
+def ors_response(features, captured=None):
+    def fake_urlopen(request, timeout):
+        if captured is not None:
+            captured["url"] = request.full_url
+            captured["auth"] = request.get_header("Authorization")
+        return io.BytesIO(json.dumps({"features": features}).encode())
+
+    return fake_urlopen
 
 
 def shipment_payload(**overrides):
     payload = {
-        "origin_address": "123 Origin St",
-        "origin_latitude": -15.3875,
-        "origin_longitude": 28.3228,
-        "destination_address": "456 Dest Ave",
-        "destination_latitude": -12.9614,
-        "destination_longitude": 28.6366,
+        "origin_address": "Cairo Road, Lusaka",
+        "destination_address": "Broadway, Ndola",
         "cargo_type": "Maize",
         "weight_kg": 2500.0,
         "required_body_type": "flatbed",
-        "pickup_time": "2026-11-10T09:00:00Z",
+        "pickup_date": future_date(),
+        "pickup_time": "08:00",
         "proposed_amount": 2500.00,
     }
     payload.update(overrides)
@@ -63,7 +88,8 @@ def build_test_app(db_session):
 
 
 @pytest.fixture
-def api_client(db_session, sample_company, sample_user):
+def api_client(db_session, sample_company, sample_user, monkeypatch):
+    monkeypatch.setattr(shipment_service, "geocode_address", fake_geocode)
     app = build_test_app(db_session)
     app.dependency_overrides[shipper] = lambda: sample_user
     app.dependency_overrides[require_verified_company] = lambda: sample_company
@@ -308,6 +334,78 @@ class TestShipment:
         assert sample_shipment.reservation is not None
         assert sample_shipment.reservation.reservation_id == reservation.reservation_id
 
+    def test_geocode_address_reads_ors_coordinates(self, monkeypatch):
+        monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setattr(
+            shipment_service,
+            "urlopen",
+            ors_response([{"geometry": {"coordinates": [28.2833, -15.4167]}}]),
+        )
+
+        result = shipment_service.geocode_address("Cairo Road, Lusaka")
+
+        assert result == (-15.4167, 28.2833)
+
+    def test_geocode_address_sends_key_in_header_not_url(self, monkeypatch):
+        captured = {}
+        monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setattr(
+            shipment_service,
+            "urlopen",
+            ors_response(
+                [{"geometry": {"coordinates": [28.2833, -15.4167]}}], captured
+            ),
+        )
+
+        shipment_service.geocode_address("Cairo Road, Lusaka")
+
+        assert captured["auth"] == "test-key"
+        assert "test-key" not in captured["url"]
+        assert "boundary.country=ZM" in captured["url"]
+
+    def test_geocode_address_returns_none_when_not_found(self, monkeypatch):
+        monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setattr(shipment_service, "urlopen", ors_response([]))
+
+        assert shipment_service.geocode_address("Nowhere Land") is None
+
+    def test_geocode_address_without_api_key(self, monkeypatch):
+        monkeypatch.delenv("ORS_API_KEY", raising=False)
+
+        with pytest.raises(HTTPException) as error:
+            shipment_service.geocode_address("Cairo Road, Lusaka")
+
+        assert error.value.status_code == 503
+
+    def test_geocode_address_when_ors_is_down(self, monkeypatch):
+        def broken_urlopen(request, timeout):
+            raise URLError("down")
+
+        monkeypatch.setenv("ORS_API_KEY", "test-key")
+        monkeypatch.setattr(shipment_service, "urlopen", broken_urlopen)
+
+        with pytest.raises(HTTPException) as error:
+            shipment_service.geocode_address("Cairo Road, Lusaka")
+
+        assert error.value.status_code == 503
+
+    def test_pickup_date_and_time_are_combined_in_zambia_time(self):
+        pickup = shipment_service.combine_pickup(
+            date.today() + timedelta(days=3), time(8, 0)
+        )
+
+        assert pickup.hour == 8
+        assert pickup.minute == 0
+        assert pickup.utcoffset() == timedelta(hours=2)
+
+    def test_pickup_in_the_past_is_rejected(self):
+        with pytest.raises(HTTPException) as error:
+            shipment_service.combine_pickup(
+                date.today() - timedelta(days=1), time(8, 0)
+            )
+
+        assert error.value.status_code == 422
+
     def test_create_shipment_success(self, api_client, sample_company, sample_user):
         response = api_client.post("/shipments", json=shipment_payload())
 
@@ -317,7 +415,70 @@ class TestShipment:
         assert data["status"] == "open"
         assert data["company_id"] == str(sample_company.company_id)
         assert data["user_id"] == str(sample_user.user_id)
+        assert data["origin_latitude"] == pytest.approx(-15.4167)
+        assert data["origin_longitude"] == pytest.approx(28.2833)
+        assert data["destination_latitude"] == pytest.approx(-12.9587)
+        assert data["destination_longitude"] == pytest.approx(28.6366)
         assert "shipment_id" in data
+
+    def test_create_shipment_ignores_client_coordinates_and_status(
+        self, api_client, sample_company
+    ):
+        response = api_client.post(
+            "/shipments",
+            json=shipment_payload(
+                origin_latitude=0.0,
+                origin_longitude=0.0,
+                status="confirmed",
+                company_id=str(uuid.uuid4()),
+            ),
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["origin_latitude"] == pytest.approx(-15.4167)
+        assert data["status"] == "open"
+        assert data["company_id"] == str(sample_company.company_id)
+
+    def test_create_shipment_unknown_origin(self, api_client):
+        response = api_client.post(
+            "/shipments", json=shipment_payload(origin_address="Nowhere Land")
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Origin address could not be found"
+
+    def test_create_shipment_unknown_destination(self, api_client):
+        response = api_client.post(
+            "/shipments", json=shipment_payload(destination_address="Nowhere Land")
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Destination address could not be found"
+
+    def test_create_shipment_pickup_in_the_past(self, api_client):
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+        response = api_client.post(
+            "/shipments", json=shipment_payload(pickup_date=yesterday)
+        )
+
+        assert response.status_code == 422
+
+    def test_create_shipment_invalid_pickup_time(self, api_client):
+        response = api_client.post(
+            "/shipments", json=shipment_payload(pickup_time="25:00")
+        )
+
+        assert response.status_code == 422
+
+    def test_create_shipment_missing_pickup_time(self, api_client):
+        payload = shipment_payload()
+        payload.pop("pickup_time")
+
+        response = api_client.post("/shipments", json=payload)
+
+        assert response.status_code == 422
 
     def test_create_shipment_invalid_weight(self, api_client):
         response = api_client.post("/shipments", json=shipment_payload(weight_kg=-10.0))
@@ -395,6 +556,54 @@ class TestShipment:
         assert data["special_requirements"] == "Fragile"
         assert data["cargo_type"] == "Maize"
         assert data["status"] == "open"
+
+    def test_update_shipment_address_looks_up_new_coordinates(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"origin_address": "Kitwe Town Centre"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["origin_address"] == "Kitwe Town Centre"
+        assert data["origin_latitude"] == pytest.approx(-12.8024)
+        assert data["origin_longitude"] == pytest.approx(28.2132)
+
+    def test_update_shipment_unknown_address(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"destination_address": "Nowhere Land"},
+        )
+
+        assert response.status_code == 422
+
+    def test_update_shipment_pickup_date_and_time(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"pickup_date": future_date(14), "pickup_time": "06:30"},
+        )
+
+        assert response.status_code == 200
+
+    def test_update_shipment_pickup_date_without_time(self, api_client):
+        create_res = api_client.post("/shipments", json=shipment_payload())
+        shipment_id = create_res.json()["shipment_id"]
+
+        response = api_client.patch(
+            f"/shipments/{shipment_id}",
+            json={"pickup_date": future_date(14)},
+        )
+
+        assert response.status_code == 422
 
     def test_update_shipment_cannot_change_status(self, api_client):
         create_res = api_client.post("/shipments", json=shipment_payload())
