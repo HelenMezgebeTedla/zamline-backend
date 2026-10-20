@@ -1,9 +1,6 @@
 from __future__ import annotations
-
 from uuid import UUID
-
 from sqlalchemy.orm import Session
-
 from models.reservations import Reservation, ReservationStatus
 from models.shipments import Shipment, ShipmentStatus
 from models.trucks import AvailabilityStatus, BodyType, Truck
