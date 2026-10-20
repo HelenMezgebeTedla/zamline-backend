@@ -1,23 +1,18 @@
 from logging.config import fileConfig
-from dotenv import load_dotenv
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-load_dotenv()
+import models  # noqa: F401  imported so every table is registered on Base
+from database import Base, database_url
 
 config = context.config
-
-from database import database_url 
 
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
-import models  
-from database import Base 
 
 target_metadata = Base.metadata
 
