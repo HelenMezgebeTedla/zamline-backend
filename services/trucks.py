@@ -61,6 +61,7 @@ def _audit(
         details=details,
     )
 
+
 def get_truck(db: Session, company_id: UUID, truck_id: UUID) -> Truck:
     truck = get_company_truck(db, company_id, truck_id)
     if truck is None:
@@ -82,6 +83,7 @@ def list_trucks(
         body_type=body_type,
         include_retired=include_retired,
     )
+
 
 def create_truck(db: Session, company_id: UUID, user_id: UUID, data: TruckCreate):
     if get_truck_by_plate(db, data.plate_number):

@@ -214,6 +214,7 @@ def fleet_trucks(db_session, fleet_company, rival_company):
         "rival": make_truck(db_session, rival_company, "BCC 2001"),
     }
 
+
 @pytest.fixture
 def allocated_truck(
     db_session, fleet_company, fleet_manager, shipper_company, shipper_user
@@ -297,6 +298,7 @@ class TestMockData:
         assert reservation.status == models.ReservationStatus.ACCEPTED
         assert reservation.shipment.status == models.ShipmentStatus.CONFIRMED
         assert reservation.truck_id == allocated_truck["truck"].truck_id
+
 
 class TestTruck:
     def test_create_truck_happy_path(self, db_session, sample_fleet_company):
@@ -945,7 +947,7 @@ class TestCreateTruckService:
     ):
 
         def raise_duplicate(*args, **kwargs):
-               raise truck_repo.DuplicatePlateError
+            raise truck_repo.DuplicatePlateError
 
         monkeypatch.setattr(truck_service, "create_truck_record", raise_duplicate)
         with pytest.raises(HTTPException) as error:
@@ -992,6 +994,7 @@ class TestReadTruckService:
         assert (
             truck_service.list_trucks(db_session, unverified_company.company_id) == []
         )
+
 
 class TestUpdateTruckService:
     def test_updates_fields_and_audits_which_changed(
