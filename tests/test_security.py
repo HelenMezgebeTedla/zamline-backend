@@ -161,8 +161,71 @@ class TestOTPEmail:
         assert server.host == "smtp.zamline-tests.com"
         assert server.actions == ["starttls", "login:mailer"]
         assert server.message["To"] == "user@zamline-tests.com"
-        assert server.message["From"] == "no-reply@zamline-tests.com"
-        assert "123456" in server.message.get_payload()
+        assert server.message["From"] == "ZamLine <no-reply@zamline-tests.com>"
+        assert server.message["Subject"] == "123456 is your ZamLine verification code"
+        plain = server.message.get_body(preferencelist=("plain",)).get_content()
+        html = server.message.get_body(preferencelist=("html",)).get_content()
+        assert "123456" in plain
+        assert "Verify your email" in html
+        for digit in "123456":
+            assert f">{digit}</td>" in html
+
+    def test_email_matches_the_zamline_design(self):
+        html = email_module.build_otp_html("482915")
+        assert "ZamLine" in html
+        assert "#0b1f3a" in html and "#1a9bb8" in html
+        assert "expires in" in html
+
+    def test_shipper_code_opens_the_shipper_verify_page(self):
+        message = email_module.build_otp_message(
+            "owner+1@zamline-tests.com", "482915", role="shipper"
+        )
+        html = message.get_body(("html",)).get_content()
+        assert "Tap your code" in html
+        assert (
+            'href="http://localhost:3000/shipper/verify-email'
+            '#email=owner%2B1%40zamline-tests.com&amp;code=482915"'
+        ) in html
+
+    def test_fleet_code_opens_the_fleet_page(self):
+        assert email_module.code_link(
+            "a@b.com", "111222", "fleet_manager", email_module.RESET
+        ) == ("http://localhost:3000/fleet/forgot-password#email=a%40b.com&code=111222")
+
+    def test_without_a_role_the_code_is_plain_text(self):
+        html = email_module.build_otp_html("482915")
+        assert "<a " not in html
+        assert 'user-select:all;">482915</span>' in html
+
+    def test_without_frontend_url_there_is_no_link(self, monkeypatch):
+        monkeypatch.setattr(email_module, "FRONTEND_URL", "")
+        assert (
+            email_module.code_link("a@b.com", "1", "shipper", email_module.VERIFY)
+            is None
+        )
+
+    def test_sender_name_is_kept_when_already_given(self, monkeypatch):
+        monkeypatch.setattr(email_module, "EMAIL_FROM", "Nexa Team <team@x.com>")
+        assert email_module.sender_address() == "Nexa Team <team@x.com>"
+
+    def test_email_has_no_logo_image(self):
+        message = email_module.build_otp_message("user@zamline-tests.com", "123456")
+        types = [part.get_content_type() for part in message.walk()]
+        assert "image/png" not in types
+        assert "<img" not in message.get_body(("html",)).get_content()
+
+    def test_password_reset_email_uses_the_same_design(self, smtp_settings):
+        email_module.send_password_reset_email(
+            "user@zamline-tests.com", "654321", role="fleet_manager"
+        )
+        message = FakeSMTP.instances[0].message
+        assert message["Subject"] == "654321 is your ZamLine password reset code"
+        assert message["From"] == "ZamLine <no-reply@zamline-tests.com>"
+        html = message.get_body(("html",)).get_content()
+        assert "Reset your password" in html
+        assert "/fleet/forgot-password#email=" in html
+        assert "code=654321" in html
+        assert "654321" in message.get_body(("plain",)).get_content()
 
     def test_tls_can_be_disabled_for_local_relays(self, smtp_settings, monkeypatch):
         monkeypatch.setattr(email_module, "EMAIL_USE_TLS", False)

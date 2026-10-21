@@ -946,10 +946,10 @@ class TestCreateTruckService:
         self, db_session, fleet_company, fleet_manager, monkeypatch
     ):
 
-        def raise_integrity(*args, **kwargs):
-            raise IntegrityError("insert", {}, Exception("duplicate"))
+        def raise_duplicate(*args, **kwargs):
+            raise truck_repo.DuplicatePlateError
 
-        monkeypatch.setattr(truck_service, "create_truck_record", raise_integrity)
+        monkeypatch.setattr(truck_service, "create_truck_record", raise_duplicate)
         with pytest.raises(HTTPException) as error:
             truck_service.create_truck(
                 db_session,

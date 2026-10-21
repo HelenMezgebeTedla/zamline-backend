@@ -13,7 +13,6 @@ from models.trucks import AvailabilityStatus, BodyType
 
 
 def normalize_plate(value: str) -> str:
-    """'baa 1234' and ' BAA  1234 ' are the same truck, so store one form."""
     return re.sub(r"\s+", " ", value.strip()).upper()
 
 
@@ -49,12 +48,6 @@ class TruckCreate(BaseModel):
 
 
 class TruckUpdate(BaseModel):
-    """Edit truck information (FYP-140).
-
-    Availability has its own endpoint (FYP-141) and retiring has its own
-    endpoint (FYP-142), so neither can be changed here.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     truck_type: str | None = Field(default=None, min_length=2, max_length=30)
@@ -84,10 +77,6 @@ class TruckUpdate(BaseModel):
 
 
 class TruckAvailabilityUpdate(BaseModel):
-    """Switch a truck on or off for matching (FYP-141)."""
-
-    """Switch a truck on or off for matching (FYP-141)."""
-
     model_config = ConfigDict(extra="forbid")
 
     availability_status: AvailabilityStatus
@@ -146,12 +135,8 @@ class AllocatedShipment(BaseModel):
 
 
 class TruckAllocationResponse(BaseModel):
-    """Is this truck free, or tied to a confirmed shipment? (FYP-143)"""
-
-    """Is this truck free, or tied to a confirmed shipment? (FYP-143)"""
-
     truck_id: UUID
     plate_number: str
     availability_status: AvailabilityStatus
-    allocation_status: str  # "allocated", "available", "unavailable", "retired"
+    allocation_status: str
     allocated_shipment: AllocatedShipment | None

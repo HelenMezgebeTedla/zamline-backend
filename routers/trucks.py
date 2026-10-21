@@ -1,8 +1,6 @@
 from uuid import UUID
-
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-
 from database import get_db
 from dependency import require_role, require_verified_company
 from models.trucks import AvailabilityStatus, BodyType
@@ -38,7 +36,6 @@ def create(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-137 Register a truck."""
     return create_truck(db, company.company_id, current_user.user_id, payload)
 
 
@@ -51,7 +48,6 @@ def list_all(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-139 View company trucks. Retired trucks are hidden unless asked for."""
     return list_trucks(
         db,
         company.company_id,
@@ -67,7 +63,6 @@ def allocations(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-143 Allocation status for every active truck in the company."""
     return list_truck_allocations(db, company.company_id)
 
 
@@ -78,7 +73,6 @@ def read(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-138 View truck details."""
     return get_truck(db, company.company_id, truck_id)
 
 
@@ -90,7 +84,6 @@ def update(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-140 Update truck information."""
     return update_truck(
         db,
         company.company_id,
@@ -108,7 +101,6 @@ def change_availability(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-141 Update truck availability."""
     return update_availability(
         db,
         company.company_id,
@@ -126,7 +118,6 @@ def retire(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-142 Deactivate or retire a truck (kept for history, never matched)."""
     return retire_truck(
         db,
         company.company_id,
@@ -143,5 +134,4 @@ def allocation(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-    """FYP-143 View truck allocation status."""
     return get_truck_allocation(db, company.company_id, truck_id)

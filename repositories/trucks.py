@@ -1,18 +1,34 @@
-from __future__ import annotations
-
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
 from models.reservations import Reservation, ReservationStatus
 from models.shipments import Shipment, ShipmentStatus
 from models.trucks import AvailabilityStatus, BodyType, Truck
 
 
-def create_truck(db: Session, **values):
+class DuplicatePlateError(Exception):
+    """Another truck already uses this plate number."""
+
+
+def create_truck(db: Session, **values) -> Truck:
     truck = Truck(**values)
     db.add(truck)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as error:
+        db.rollback()
+        raise DuplicatePlateError from error
+    return truck
+
+
+def save_truck(db: Session, truck: Truck) -> Truck:
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise DuplicatePlateError from error
+    db.refresh(truck)
     return truck
 
 

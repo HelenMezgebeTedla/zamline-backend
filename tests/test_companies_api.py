@@ -77,7 +77,7 @@ class TestCreateCompany:
             "/companies/create",
             json={
                 "business_name": "  Zambia Freight  ",
-                "registration_number": "pacra12345",
+                "registration_number": " 120180010448 ",
                 "company_email": "Info@Zambia-Freight.com",
                 "phone_number": "+260977000111",
                 "company_type": "fleet",
@@ -87,7 +87,7 @@ class TestCreateCompany:
         assert response.status_code == 201
         body = response.json()
         assert body["business_name"] == "Zambia Freight"
-        assert body["registration_number"] == "PACRA12345"
+        assert body["registration_number"] == "120180010448"
         assert body["company_email"] == "info@zambia-freight.com"
         assert body["verification_status"] == "pending"
         assert _audit_count(db_session, "company_created") == 1
@@ -95,14 +95,14 @@ class TestCreateCompany:
     def test_duplicate_email_and_registration_are_rejected(self, client):
         payload = {
             "business_name": "Zambia Freight",
-            "registration_number": "PACRA12345",
+            "registration_number": "120180010448",
             "company_email": "info@zambia-freight.com",
             "phone_number": "+260977000111",
             "company_type": "fleet",
         }
         assert client.post("/companies/create", json=payload).status_code == 201
 
-        same_email = {**payload, "registration_number": "PACRA99999"}
+        same_email = {**payload, "registration_number": "120199999999"}
         same_number = {**payload, "company_email": "other@zambia-freight.com"}
 
         assert client.post("/companies/create", json=same_email).status_code == 409
@@ -522,12 +522,12 @@ class TestCompanyFieldRules:
     def test_values_are_cleaned(self):
         cleaned = validate_company_fields(
             business_name="  Alpha   Beta ",
-            registration_number=" reg0001",
+            registration_number=" 1201 8001 ",
             phone_number="+260 (97) 123-4567",
         )
         assert cleaned == {
             "business_name": "Alpha Beta",
-            "registration_number": "REG0001",
+            "registration_number": "12018001",
             "phone_number": "+260971234567",
         }
 
