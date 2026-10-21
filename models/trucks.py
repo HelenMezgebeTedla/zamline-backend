@@ -30,6 +30,7 @@ class BodyType(str, enum.Enum):
 class AvailabilityStatus(str, enum.Enum):
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
+    RETIRED = "retired"
 
 
 class Truck(Base):
