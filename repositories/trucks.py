@@ -1,16 +1,32 @@
-from __future__ import annotations
 from uuid import UUID
-from sqlalchemy.orm import Session
 
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from models.reservations import Reservation, ReservationStatus
 from models.shipments import Shipment, ShipmentStatus
 from models.trucks import AvailabilityStatus, BodyType, Truck
 
+class DuplicatePlateError(Exception):
+    """Another truck already uses this plate number."""
 
-def create_truck(db: Session, **values):
+def create_truck(db: Session, **values) -> Truck:
     truck = Truck(**values)
     db.add(truck)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as error:
+        db.rollback()
+        raise DuplicatePlateError from error
+    return truck
+
+
+def save_truck(db: Session, truck: Truck) -> Truck:
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise DuplicatePlateError from error
+    db.refresh(truck)
     return truck
 
 
@@ -61,7 +77,6 @@ def list_available_company_trucks(db: Session, company_id: UUID):
         .all()
     )
 
-
 def get_active_reservation_for_truck(db: Session, truck_id: UUID):
     return (
         db.query(Reservation)
@@ -74,3 +89,6 @@ def get_active_reservation_for_truck(db: Session, truck_id: UUID):
         .order_by(Reservation.reserved_at.desc())
         .first()
     )
+    
+
+    
