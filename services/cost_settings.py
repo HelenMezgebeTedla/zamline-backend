@@ -18,8 +18,7 @@ def record_event(
     entity_id: UUID | None = None,
     details: dict | None = None,
 ):
-    """Write one audit log row. Kept here so this feature doesn't depend on
-    the shared services/audit_logs.py, which another teammate owns."""
+
     log = AuditLog(
         user_id=user_id,
         company_id=company_id,
