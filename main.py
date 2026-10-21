@@ -1,6 +1,7 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 
+from config import CORS_ORIGINS
 from database import Base, engine
 from routers.reservations import router as reservations_router
 from routers.companies import router as companies_router
@@ -16,7 +17,7 @@ app = FastAPI(title="ZamLine", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
