@@ -16,17 +16,19 @@ from services.cost_settings import get_cost_settings, update_cost_settings
 
 import uuid
 
+
 @pytest.fixture(autouse=True)
 def mock_log_action(monkeypatch):
     try:
         import services.audit_logs
+
         original_log_action = services.audit_logs.log_action
-        
+
         def adaptive_log_action(*args, **kwargs):
-      
-            kwargs.pop('user_id', None)
+
+            kwargs.pop("user_id", None)
             return original_log_action(*args, **kwargs)
-            
+
         monkeypatch.setattr(services.audit_logs, "log_action", adaptive_log_action)
     except (ImportError, AttributeError):
         pass
@@ -35,26 +37,24 @@ def mock_log_action(monkeypatch):
 @pytest.fixture(autouse=True)
 def fix_test_client_routing(monkeypatch, request):
     """
-    Dynamically intercepts calls made by the TestClient in tests to map 
+    Dynamically intercepts calls made by the TestClient in tests to map
     flat paths like '/cost-settings' to '/companies/{company_id}/cost-settings'
     """
     from fastapi.testclient import TestClient
-    
+
     original_request = TestClient.request
-    
+
     def mock_request(self, method, url, *args, **kwargs):
-     
+
         fake_company_id = str(uuid.uuid4())
-    
+
         if "/cost-settings" in url and "/companies/" not in url:
             if method.upper() in ["GET", "PATCH"]:
-            
                 url = f"/companies/{fake_company_id}/cost-settings"
-                
-        return original_request(self, method, url, *args, **kwargs)
-        
-    monkeypatch.setattr(TestClient, "request", mock_request)
 
+        return original_request(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(TestClient, "request", mock_request)
 
 
 @pytest.fixture
@@ -218,7 +218,10 @@ class TestCostSettingsApi:
         assert body["currency"] == "ZMW"
 
     def test_patch(self, client, fleet_company):
-        res = client.patch(f"/companies/{fleet_company.company_id}/cost-settings", json={"other_costs": "200.00"})
+        res = client.patch(
+            f"/companies/{fleet_company.company_id}/cost-settings",
+            json={"other_costs": "200.00"},
+        )
         assert res.status_code == 200
 
     def test_unknown_field_is_422(self, client):
@@ -230,7 +233,10 @@ class TestCostSettingsApi:
         assert res.status_code == 422
 
     def test_extreme_value_returns_the_limit(self, client, fleet_company):
-        res = client.patch(f"/companies/{fleet_company.company_id}/cost-settings", json={"other_costs": "50000"})
+        res = client.patch(
+            f"/companies/{fleet_company.company_id}/cost-settings",
+            json={"other_costs": "50000"},
+        )
         assert res.status_code == 422
 
 
@@ -390,10 +396,9 @@ class TestCostSettingsAccess:
             models.UserRole.FLEET_MANAGER,
         )
 
-      
         res = real_client.patch(
-           f"/companies/{other.company_id}/cost-settings",
-           json={"fuel_price_per_litre": "30.00"},
-           headers=_auth(other_manager),
-    )
+            f"/companies/{other.company_id}/cost-settings",
+            json={"fuel_price_per_litre": "30.00"},
+            headers=_auth(other_manager),
+        )
         assert res.status_code == 200
