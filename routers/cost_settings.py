@@ -48,7 +48,7 @@ def read(
     company=Depends(require_verified_company),
 ):
 
-    return get_cost_settings(db, company.company_id)
+    return get_cost_settings(db, company_id)
 
 
 @router.patch(
