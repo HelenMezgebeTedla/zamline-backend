@@ -206,8 +206,8 @@ def client(db_session, fleet_company, fleet_manager_user):
 
 
 class TestCostSettingsApi:
-    def test_get(self, client):
-        res = client.get("/cost-settings")
+    def test_get(self, client, fleet_company):
+        res = client.get(f"/companies/{fleet_company.company_id}/cost-settings")
         assert res.status_code == 200
         body = res.json()
         assert body["fuel_price_per_litre"] == "27.50"
@@ -336,7 +336,10 @@ class TestCostSettingsAccess:
     def test_fleet_manager_of_verified_company_gets_in(
         self, real_client, fleet_manager_user
     ):
-        res = real_client.get("/cost-settings", headers=_auth(fleet_manager_user))
+        company_id = fleet_manager_user.company_id
+        res = real_client.get(
+            f"/companies/{company_id}/cost-settings", headers=_auth(fleet_manager_user)
+        )
         assert res.status_code == 200
         assert res.json()["driver_daily_allowance"] == "450.00"
 
@@ -347,7 +350,10 @@ class TestCostSettingsAccess:
             "shipper.cost@zamline-mock.com",
             models.UserRole.SHIPPER,
         )
-        res = real_client.get("/cost-settings", headers=_auth(shipper))
+        res = real_client.get(
+            f"/companies/{shipper_company.company_id}/cost-settings",
+            headers=_auth(shipper),
+        )
         assert res.status_code == 403
 
     def test_unverified_company_is_403(self, real_client, db_session):
