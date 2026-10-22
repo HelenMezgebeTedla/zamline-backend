@@ -14,7 +14,10 @@ from repositories.companies import (
 )
 from repositories.cost_settings import (
     add_company_with_cost_settings,
+    apply_cost_settings,
     get_cost_settings_company,
+    rollback_changes,
+    save_company,
 )
 from schemas.cost_settings import (
     EXTREME_VALUE_LIMITS,
@@ -68,8 +71,7 @@ def update_cost_settings(
             },
         )
 
-    for field, value in updates.items():
-        setattr(company, field, value)
+    apply_cost_settings(company, updates)
 
     log_action(
         db,
@@ -83,9 +85,7 @@ def update_cost_settings(
             "extreme_values_confirmed": sorted(extreme),
         },
     )
-    db.commit()
-    db.refresh(company)
-    return company
+    return save_company(db, company)
 
 
 def check_cost_settings(
@@ -169,11 +169,10 @@ def post_company_cost_settings(
             entity_id=company.company_id,
             details={"posted_fields": sorted(data.money_values().keys())},
         )
-        db.commit()
-        db.refresh(company)
-        return company
+
+        return save_company(db, company)
     except IntegrityError:
-        db.rollback()
+        rollback_changes(db)
         raise HTTPException(
             status_code=409,
             detail="Registration number is already registered",
