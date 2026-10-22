@@ -18,7 +18,6 @@ MONEY_FIELDS = tuple(EXTREME_VALUE_LIMITS)
 
 
 class CostSettingsValues(BaseModel):
-  
     model_config = ConfigDict(extra="forbid")
 
     fuel_price_per_litre: Decimal | None = Field(
@@ -58,10 +57,7 @@ class CostSettingsUpdate(CostSettingsValues):
 
 
 class CostSettingsResponse(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True,
-        coerce_numbers_to_str=True
-    )
+    model_config = ConfigDict(from_attributes=True, coerce_numbers_to_str=True)
     company_id: UUID
     fuel_price_per_litre: Decimal | None
     driver_daily_allowance: Decimal | None
@@ -70,8 +66,8 @@ class CostSettingsResponse(BaseModel):
     currency: str = "ZMW"
     updated_at: datetime
 
+
 class CostSettingsCreate(CostSettingsValues):
-  
     model_config = ConfigDict(extra="forbid")
 
     business_name: str = Field(min_length=2, max_length=100)
@@ -102,7 +98,6 @@ class CostSettingsCreate(CostSettingsValues):
 
 
 class CostSettingsPostResponse(BaseModel):
-    
     model_config = ConfigDict(from_attributes=True)
 
     company_id: UUID

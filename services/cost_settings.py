@@ -1,5 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
+from models.users import User
+
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -72,7 +74,7 @@ def update_cost_settings(
     log_action(
         db,
         "cost_settings_updated",
-        user_id=user_id,
+        user=User(user_id=user_id),
         company_id=company_id,
         entity_type="company",
         entity_id=company_id,
@@ -90,7 +92,7 @@ def check_cost_settings(
     data: CostSettingsValues | None,
     company_type: CompanyType,
 ) -> None:
- 
+
     if data is None:
         return
     if company_type != CompanyType.FLEET:
@@ -129,7 +131,7 @@ def post_company_cost_settings(
     user_id: UUID,
     data: CostSettingsCreate,
 ) -> Company:
-  
+
     registration_number = data.registration_number
     company_email = str(data.company_email).lower()
 
@@ -157,11 +159,11 @@ def post_company_cost_settings(
             verification_status=VerificationStatus.PENDING,
             **data.money_values(),
         )
-   
+
         log_action(
             db,
             "cost_settings_posted",
-            user_id=user_id,
+            user=User(user_id=user_id),
             company_id=company.company_id,
             entity_type="company",
             entity_id=company.company_id,

@@ -34,10 +34,13 @@ def post(
     current_user=Depends(fleet_manager),
     company=Depends(require_verified_company),
 ):
-  
+
     return post_company_cost_settings(db, current_user.user_id, payload)
 
-@router.get("/companies/{company_id}/cost-settings", response_model=CostSettingsResponse)
+
+@router.get(
+    "/companies/{company_id}/cost-settings", response_model=CostSettingsResponse
+)
 def read(
     company_id: uuid.UUID,
     db: Session = Depends(get_db),
@@ -48,7 +51,9 @@ def read(
     return get_cost_settings(db, company.company_id)
 
 
-@router.patch("/companies/{company_id}/cost-settings", response_model=CostSettingsResponse)
+@router.patch(
+    "/companies/{company_id}/cost-settings", response_model=CostSettingsResponse
+)
 def update(
     company_id: uuid.UUID,
     payload: CostSettingsUpdate,
