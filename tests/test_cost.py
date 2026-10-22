@@ -36,10 +36,6 @@ def mock_log_action(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fix_test_client_routing(monkeypatch, request):
-    """
-    Dynamically intercepts calls made by the TestClient in tests to map
-    flat paths like '/cost-settings' to '/companies/{company_id}/cost-settings'
-    """
     from fastapi.testclient import TestClient
 
     original_request = TestClient.request
@@ -308,7 +304,6 @@ class TestCostSettingsRules:
 
 @pytest.fixture
 def real_client(db_session):
-    """The router with the real login checks (no shortcuts)."""
     app = FastAPI()
     app.include_router(cost_settings_router)
     app.dependency_overrides[get_db] = lambda: db_session
