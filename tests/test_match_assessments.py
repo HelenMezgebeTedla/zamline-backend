@@ -226,6 +226,45 @@ def test_valid_ai_estimate_is_persisted_with_backend_margin(
     assert response.assessment.major_cost_factors[1].amount == Decimal("450.00")
 
 
+def test_legacy_saved_assessment_missing_factor_status_is_normalized(
+    db, pending_match, monkeypatch
+):
+    match, response = assess_with(db, pending_match, monkeypatch, None)
+
+    stored = json.loads(match.ai_explanation)
+    for factor in stored["assessment"]["major_cost_factors"]:
+        if factor["amount"] is None and factor["calculation_basis"] is None:
+            factor.pop("status", None)
+    match.ai_explanation = json.dumps(stored)
+    db.add(match)
+    db.commit()
+
+    detail = match_assessments.build_match_detail(match)
+    payload = MatchDetailResponse.model_validate(detail)
+
+    assert payload.assessment is not None
+    assert payload.assessment.major_cost_factors[0].status == "not_quantified"
+    assert payload.assessment.major_cost_factors[0].amount is None
+
+
+def test_invalid_saved_assessment_is_failed_instead_of_500(
+    db, pending_match, monkeypatch
+):
+    match, response = assess_with(db, pending_match, monkeypatch, None)
+
+    stored = json.loads(match.ai_explanation)
+    stored["assessment"]["major_cost_factors"][1].pop("status", None)
+    match.ai_explanation = json.dumps(stored)
+    db.add(match)
+    db.commit()
+
+    detail = match_assessments.build_match_detail(match)
+
+    assert detail["assessment"] is None
+    assert detail["assessment_status"] == "failed"
+    assert "regenerated" in detail["assessment_error"].lower()
+
+
 def test_estimated_total_cost_comes_from_validated_quantified_cost(
     db, pending_match, monkeypatch
 ):

@@ -632,10 +632,61 @@ def stored_cost_breakdown(match: ShipmentMatch) -> dict | None:
     return components
 
 
+def normalize_saved_assessment(raw_assessment) -> AiAssessment | None:
+    if not isinstance(raw_assessment, dict):
+        return None
+
+    factors = raw_assessment.get("major_cost_factors")
+    if not isinstance(factors, list):
+        return None
+
+    normalized_factors = []
+    for factor in factors:
+        if not isinstance(factor, dict):
+            return None
+
+        status = factor.get("status")
+        if status not in {"quantified", "not_quantified", "not_applicable"}:
+            if "status" not in factor:
+                if (
+                    factor.get("amount") is None
+                    and factor.get("calculation_basis") is None
+                ):
+                    status = "not_quantified"
+                else:
+                    return None
+            else:
+                return None
+
+        if status in {"not_quantified", "not_applicable"} and (
+            factor.get("amount") is not None
+            or factor.get("calculation_basis") is not None
+        ):
+            return None
+
+        normalized_factors.append({**factor, "status": status})
+
+    copy = {**raw_assessment, "major_cost_factors": normalized_factors}
+
+    try:
+        return AiAssessment.model_validate(copy)
+    except ValidationError:
+        return None
+
+
 def build_match_detail(match: ShipmentMatch) -> dict:
     cost_breakdown = stored_cost_breakdown(match)
     stored = read_stored_assessment(match)
     status, error = assessment_status(stored)
+    completed = status == ASSESSMENT_COMPLETED
+    assessment = None
+
+    if completed:
+        assessment = normalize_saved_assessment(stored.get("assessment"))
+        if assessment is None:
+            status = ASSESSMENT_FAILED
+            error = "Saved assessment is incomplete and must be regenerated."
+
     completed = status == ASSESSMENT_COMPLETED
 
     return {
@@ -662,7 +713,7 @@ def build_match_detail(match: ShipmentMatch) -> dict:
         ),
         "outcome": match.outcome if completed else None,
         "reference_sources": stored.get("reference_sources") if completed else None,
-        "assessment": stored.get("assessment") if completed else None,
+        "assessment": assessment.model_dump(mode="json") if assessment else None,
         "assessment_error": error,
         "assessment_status": status,
     }
