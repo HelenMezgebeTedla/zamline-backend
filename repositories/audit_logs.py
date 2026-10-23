@@ -22,7 +22,7 @@ def create_audit_log(
         details=details,
     )
     db.add(audit_log)
-    db.commit()
+    db.flush()
     db.refresh(audit_log)
     return audit_log
 

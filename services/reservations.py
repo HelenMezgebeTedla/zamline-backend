@@ -13,6 +13,7 @@ from models.trucks import AvailabilityStatus
 from models.users import User, UserRole
 from repositories import reservations as reservations_repo
 from schemas.reservations import ContactOut
+from uuid import UUID
 
 LOAD_ALREADY_CLAIMED = "Load already claimed"
 NO_LONGER_OPEN = "Shipment is no longer open"
@@ -40,7 +41,7 @@ def require_verified_company(user: User):
         )
 
 
-def accept_match(db: Session, user: User, match_id: uuid.UUID):
+def _accept_match_transaction(db: Session, user: User, match_id: uuid.UUID):
     require_fleet_manager(user)
     require_verified_company(user)
 
@@ -59,21 +60,21 @@ def accept_match(db: Session, user: User, match_id: uuid.UUID):
     now = datetime.now(UTC)
     reservation = None
     try:
-        with db.begin_nested():
-            if reservations_repo.claim_shipment_if_open(db, shipment_id):
-                reservation = reservations_repo.create(
-                    db,
-                    Reservation(
-                        shipment_id=shipment_id,
-                        company_id=user.company_id,
-                        truck_id=match.truck_id,
-                        user_id=user.user_id,
-                        match_id=match.match_id,
-                        status=ReservationStatus.ACCEPTED,
-                        reserved_at=now,
-                    ),
-                )
+        if reservations_repo.claim_shipment_if_open(db, shipment_id):
+            reservation = reservations_repo.create(
+                db,
+                Reservation(
+                    shipment_id=shipment_id,
+                    company_id=user.company_id,
+                    truck_id=match.truck_id,
+                    user_id=user.user_id,
+                    match_id=match.match_id,
+                    status=ReservationStatus.ACCEPTED,
+                    reserved_at=now,
+                ),
+            )
     except IntegrityError:
+        db.rollback()
         raise conflict(LOAD_ALREADY_CLAIMED) from None
 
     if reservation is None:
@@ -84,9 +85,21 @@ def accept_match(db: Session, user: User, match_id: uuid.UUID):
 
     reservations_repo.mark_match_accepted(match, user.user_id, now)
     reservations_repo.close_other_pending_matches(db, shipment_id, match.match_id, now)
-    db.commit()
+    db.flush()
     db.refresh(reservation)
     return reservation
+
+
+def accept_match(db: Session, user: User, match_id: UUID):
+    try:
+        result = _accept_match_transaction(db, user, match_id)
+        db.commit()
+        return result
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
 
 def list_reservations(
