@@ -40,3 +40,24 @@ class FleetMatchResponse(BaseModel):
     manager_decision: ManagerDecision
     shipment: ShipmentOpportunitySummary
     truck: CompatibleTruckSummary
+
+
+class MatchDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    match_id: UUID
+    manager_decision: ManagerDecision
+    decided_at: datetime | None = None
+
+
+class RouteInformation(BaseModel):
+    distance_km: float
+    duration_minutes: int
+
+
+class GeocodedPlaceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str
+    latitude: float
+    longitude: float

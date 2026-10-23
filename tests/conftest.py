@@ -1,17 +1,54 @@
-import os
-
-os.environ.setdefault("JWT_SECRET", "ci-only-secret-key-0123456789-abcdef")
-
+import importlib
 import itertools
+import os
+from datetime import datetime, timezone
 
 import pytest
-from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from database import Base, get_db
-import models
+
+TEST_ENV = {
+    "ENVIRONMENT": "test",
+    "DATABASE_URL": "sqlite://",
+    "JWT_SECRET": "test-only-secret",
+    "JWT_ALGORITHM": "HS256",
+    "JWT_EXPIRE_MINUTES": "60",
+    "OTP_EXPIRE_MINUTES": "10",
+    "OTP_MAX_ATTEMPTS": "5",
+    "FRONTEND_URL": "http://localhost:3000",
+    "CORS_ORIGINS": "http://localhost:3000",
+    "ORS_API_KEY": "test-only-key",
+    "ORS_BASE_URL": "https://example.test/directions",
+    "ORS_GEOCODE_URL": "https://example.test/geocode",
+    "GEMINI_API_KEY": "test-only-key",
+    "GEMINI_MODEL": "test-model",
+    "GEMINI_FALLBACK_MODELS": "",
+    "GEMINI_TIMEOUT_SECONDS": "45",
+    "GEMINI_FILE_SEARCH_STORE": "fileSearchStores/test-store",
+    "GEMINI_REFERENCE_DIR": "reference_data",
+    "GEMINI_FILE_STATE_PATH": "data/gemini_file_state.json",
+    "GEMINI_FILE_SEARCH_STATE_PATH": "data/gemini_file_search_state.json",
+    "EMAIL_HOST": "smtp.example.test",
+    "EMAIL_PORT": "587",
+    "EMAIL_USERNAME": "test@example.test",
+    "EMAIL_PASSWORD": "test-only-password",
+    "EMAIL_FROM": "test@example.test",
+    "EMAIL_USE_TLS": "true",
+    "UPLOAD_DIR": "uploads/test-certificates",
+    "UNACCEPTED_CARGO_TYPES": "",
+    "REDIS_URL": "",
+}
+
+for key, value in TEST_ENV.items():
+    os.environ.setdefault(key, value)
+
+database = importlib.import_module("database")
+models = importlib.import_module("models")
+
+Base = database.Base
+get_db = database.get_db
 
 SAMPLE_PICKUP_TIME = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
 

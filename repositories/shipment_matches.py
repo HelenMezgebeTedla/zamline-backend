@@ -4,6 +4,11 @@ from models.companies import Company
 from models.shipment_matches import ManagerDecision, ShipmentMatch
 from models.shipments import Shipment, ShipmentStatus
 from models.trucks import AvailabilityStatus, Truck
+from models.users import User
+
+
+def get_user(db: Session, user_id):
+    return db.query(User).filter(User.user_id == user_id).first()
 
 
 def get_company(db: Session, company_id):
@@ -36,6 +41,10 @@ def get_match(db: Session, shipment_id, truck_id):
     )
 
 
+def get_match_by_id(db: Session, match_id):
+    return db.query(ShipmentMatch).filter(ShipmentMatch.match_id == match_id).first()
+
+
 def create_match(db: Session, shipment: Shipment, truck: Truck):
     match = ShipmentMatch(
         shipment_id=shipment.shipment_id,
@@ -47,7 +56,7 @@ def create_match(db: Session, shipment: Shipment, truck: Truck):
     return match
 
 
-def get_current_matches_for_company(db: Session, company_id):
+def get_pending_matches_for_company(db: Session, company_id):
     return (
         db.query(ShipmentMatch)
         .join(Truck, ShipmentMatch.truck_id == Truck.truck_id)
@@ -59,4 +68,14 @@ def get_current_matches_for_company(db: Session, company_id):
         )
         .order_by(ShipmentMatch.created_at.desc())
         .all()
+    )
+
+
+def lock_match(db: Session, match_id):
+    return (
+        db.query(ShipmentMatch)
+        .filter(ShipmentMatch.match_id == match_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
     )

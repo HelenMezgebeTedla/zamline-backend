@@ -5,47 +5,58 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+PROJECT_ROOT = Path(__file__).resolve().parent
 
-JWT_SECRET = os.getenv("JWT_SECRET", "")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
-OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "10"))
-OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+ENVIRONMENT = os.environ["ENVIRONMENT"]
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGORITHM = os.environ["JWT_ALGORITHM"]
+JWT_EXPIRE_MINUTES = int(os.environ["JWT_EXPIRE_MINUTES"])
+OTP_EXPIRE_MINUTES = int(os.environ["OTP_EXPIRE_MINUTES"])
+OTP_MAX_ATTEMPTS = int(os.environ["OTP_MAX_ATTEMPTS"])
+
+FRONTEND_URL = os.environ["FRONTEND_URL"].rstrip("/")
 
 CORS_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("CORS_ORIGINS", "").split(",")
-    if origin.strip()
+    origin.strip() for origin in os.environ["CORS_ORIGINS"].split(",") if origin.strip()
 ]
 
-ORS_API_KEY = os.getenv("ORS_API_KEY", "")
-ORS_BASE_URL = os.getenv(
-    "ORS_BASE_URL",
-    "https://api.openrouteservice.org/v2/directions",
+ORS_API_KEY = os.environ["ORS_API_KEY"]
+ORS_BASE_URL = os.environ["ORS_BASE_URL"]
+ORS_GEOCODE_URL = os.environ["ORS_GEOCODE_URL"]
+
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_MODEL = os.environ["GEMINI_MODEL"]
+
+GEMINI_FALLBACK_MODELS = [
+    model.strip()
+    for model in os.environ["GEMINI_FALLBACK_MODELS"].split(",")
+    if model.strip()
+]
+
+GEMINI_TIMEOUT_SECONDS = int(os.environ["GEMINI_TIMEOUT_SECONDS"])
+GEMINI_FILE_SEARCH_STORE = os.environ["GEMINI_FILE_SEARCH_STORE"].strip()
+
+GEMINI_REFERENCE_DIR = PROJECT_ROOT / os.environ["GEMINI_REFERENCE_DIR"]
+GEMINI_FILE_STATE_PATH = PROJECT_ROOT / os.environ["GEMINI_FILE_STATE_PATH"]
+GEMINI_FILE_SEARCH_STATE_PATH = (
+    PROJECT_ROOT / os.environ["GEMINI_FILE_SEARCH_STATE_PATH"]
 )
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "")
-GEMINI_REFERENCE_DIR = Path(os.getenv("GEMINI_REFERENCE_DIR", "reference_data"))
-GEMINI_FILE_STATE_PATH = Path(
-    os.getenv("GEMINI_FILE_STATE_PATH", "data/gemini_file_state.json")
-)
+EMAIL_HOST = os.environ["EMAIL_HOST"]
+EMAIL_PORT = int(os.environ["EMAIL_PORT"])
+EMAIL_USERNAME = os.environ["EMAIL_USERNAME"]
+EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
+EMAIL_FROM = os.environ["EMAIL_FROM"]
+EMAIL_USE_TLS = os.environ["EMAIL_USE_TLS"].lower() == "true"
 
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_USERNAME = os.getenv("EMAIL_USERNAME", "")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "")
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() == "true"
-
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads/certificates"))
+UPLOAD_DIR = Path(os.environ["UPLOAD_DIR"])
 
 UNACCEPTED_CARGO_TYPES = {
     item.strip().lower()
-    for item in os.getenv("UNACCEPTED_CARGO_TYPES", "").split(",")
+    for item in os.environ["UNACCEPTED_CARGO_TYPES"].split(",")
     if item.strip()
 }
-REDIS_URL = os.getenv("REDIS_URL", "")
+
+REDIS_URL = os.environ["REDIS_URL"]

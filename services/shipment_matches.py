@@ -1,26 +1,61 @@
-from fastapi import HTTPException, status
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from models.companies import CompanyType, VerificationStatus
-from models.shipments import Shipment
-from models.trucks import Truck
+from models.shipment_matches import ManagerDecision, ShipmentMatch
+from models.shipments import Shipment, ShipmentStatus
+from models.trucks import AvailabilityStatus, Truck
+from models.users import User, UserRole
 from repositories import shipment_matches as match_repository
+from services import reservations as reservation_service
+from services.errors import ConflictError, NotAllowedError, NotFoundError
+from services.routing import (
+    geocode_address,
+    get_route_between_coordinates,
+)
+
+SHIPMENT_NOT_AVAILABLE = "This shipment is no longer available."
 
 
-class FleetCompanyNotFoundError(HTTPException):
-    def __init__(self, detail: str):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=detail,
-        )
+class ActorNotFoundError(NotFoundError):
+    pass
 
 
-class FleetCompanyNotEligibleError(HTTPException):
-    def __init__(self, detail: str):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=detail,
-        )
+class ActorNotAllowedError(NotAllowedError):
+    pass
+
+
+class FleetCompanyNotFoundError(NotFoundError):
+    pass
+
+
+class FleetCompanyNotEligibleError(NotAllowedError):
+    pass
+
+
+class MatchNotFoundError(NotFoundError):
+    pass
+
+
+class MatchAccessDeniedError(NotAllowedError):
+    pass
+
+
+class ShipmentNoLongerAvailableError(ConflictError):
+    pass
+
+
+def get_active_user(db: Session, actor_user_id):
+    user = match_repository.get_user(db, actor_user_id)
+
+    if user is None:
+        raise ActorNotFoundError("User was not found")
+
+    if not user.is_active:
+        raise ActorNotAllowedError("User account is not active")
+
+    return user
 
 
 def get_eligible_fleet_company(db: Session, company_id):
@@ -38,6 +73,17 @@ def get_eligible_fleet_company(db: Session, company_id):
     return company
 
 
+def get_fleet_manager(db: Session, actor_user_id):
+    user = get_active_user(db, actor_user_id)
+
+    if user.role != UserRole.FLEET_MANAGER:
+        raise ActorNotAllowedError("Only Fleet Managers can perform this action")
+
+    get_eligible_fleet_company(db, user.company_id)
+
+    return user
+
+
 def truck_matches_shipment(truck: Truck, shipment: Shipment):
     if truck.body_type != shipment.required_body_type:
         return False
@@ -48,19 +94,62 @@ def truck_matches_shipment(truck: Truck, shipment: Shipment):
     return True
 
 
-def generate_matches_for_fleet_company(db: Session, company_id):
-    company = get_eligible_fleet_company(db, company_id)
+def match_is_still_eligible(match: ShipmentMatch, company_id):
+    shipment = match.shipment
+    truck = match.truck
 
-    trucks = match_repository.get_available_trucks_for_company(
-        db,
-        company.company_id,
-    )
+    if match.manager_decision != ManagerDecision.PENDING:
+        return False
+
+    if shipment.status != ShipmentStatus.OPEN:
+        return False
+
+    if truck.company_id != company_id:
+        return False
+
+    if shipment.company_id == company_id:
+        return False
+
+    if truck.availability_status != AvailabilityStatus.AVAILABLE:
+        return False
+
+    return truck_matches_shipment(truck, shipment)
+
+
+def get_own_match(db: Session, actor: User, match_id):
+    match = match_repository.get_match_by_id(db, match_id)
+
+    if match is None:
+        raise MatchNotFoundError("Match was not found")
+
+    if match.truck.company_id != actor.company_id:
+        raise MatchAccessDeniedError("You do not have access to this match")
+
+    return match
+
+
+def list_eligible_matches(db: Session, company_id):
+    matches = match_repository.get_pending_matches_for_company(db, company_id)
+
+    eligible_matches = []
+    for match in matches:
+        if match_is_still_eligible(match, company_id):
+            eligible_matches.append(match)
+
+    return eligible_matches
+
+
+def generate_matches_for_fleet_manager(db: Session, actor_user_id):
+    actor = get_fleet_manager(db, actor_user_id)
+    company_id = actor.company_id
+
+    trucks = match_repository.get_available_trucks_for_company(db, company_id)
     shipments = match_repository.get_open_shipments(db)
 
     created = False
 
     for shipment in shipments:
-        if shipment.company_id == company.company_id:
+        if shipment.company_id == company_id:
             continue
 
         for truck in trucks:
@@ -76,26 +165,80 @@ def generate_matches_for_fleet_company(db: Session, company_id):
             if existing_match is not None:
                 continue
 
-            match_repository.create_match(
-                db,
-                shipment,
-                truck,
-            )
+            match_repository.create_match(db, shipment, truck)
             created = True
 
     if created:
         db.commit()
 
-    return match_repository.get_current_matches_for_company(
-        db,
-        company.company_id,
+    return list_eligible_matches(db, company_id)
+
+
+def list_opportunities_for_fleet_manager(db: Session, actor_user_id):
+    actor = get_fleet_manager(db, actor_user_id)
+
+    return list_eligible_matches(db, actor.company_id)
+
+
+def geocode_location_for_fleet_manager(db: Session, actor_user_id, text, size):
+    get_fleet_manager(db, actor_user_id)
+    return geocode_address(text, size)
+
+
+def estimate_route_for_fleet_manager(
+    db: Session,
+    actor_user_id,
+    origin_latitude,
+    origin_longitude,
+    destination_latitude,
+    destination_longitude,
+):
+    get_fleet_manager(db, actor_user_id)
+    return get_route_between_coordinates(
+        origin_latitude,
+        origin_longitude,
+        destination_latitude,
+        destination_longitude,
     )
 
 
-def list_matches_for_fleet_company(db: Session, company_id):
-    company = get_eligible_fleet_company(db, company_id)
+def get_eligible_own_match(db: Session, actor: User, match_id):
+    match = get_own_match(db, actor, match_id)
 
-    return match_repository.get_current_matches_for_company(
+    if not match_is_still_eligible(match, actor.company_id):
+        raise ShipmentNoLongerAvailableError(SHIPMENT_NOT_AVAILABLE)
+
+    return match
+
+
+def decide_match(db: Session, actor_user_id, match_id, decision: ManagerDecision):
+    actor = get_fleet_manager(db, actor_user_id)
+    get_own_match(db, actor, match_id)
+    match = match_repository.lock_match(db, match_id)
+
+    if not match_is_still_eligible(match, actor.company_id):
+        db.rollback()
+        raise ShipmentNoLongerAvailableError(SHIPMENT_NOT_AVAILABLE)
+
+    match.manager_decision = decision
+    match.user_id = actor.user_id
+    match.decided_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return match
+
+
+def accept_match(db: Session, actor_user_id, match_id):
+    actor = get_fleet_manager(db, actor_user_id)
+    get_eligible_own_match(db, actor, match_id)
+    reservation_service.accept_match(db, actor, match_id)
+    return match_repository.get_match_by_id(db, match_id)
+
+
+def skip_match(db: Session, actor_user_id, match_id):
+    return decide_match(
         db,
-        company.company_id,
+        actor_user_id,
+        match_id,
+        ManagerDecision.DECLINED,
     )
