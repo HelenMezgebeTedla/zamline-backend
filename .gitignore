@@ -16,3 +16,6 @@ htmlcov/
 .env
 .env
 uploads/
+
+# Runtime File Search state
+data/gemini_file_search_state.json

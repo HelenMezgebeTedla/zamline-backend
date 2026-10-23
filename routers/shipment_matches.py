@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -10,6 +10,7 @@ from schemas.shipment_matches import (
     FleetMatchResponse,
     GeocodedPlaceResponse,
     MatchDecisionResponse,
+    MatchDetailResponse,
     RouteInformation,
 )
 from services.errors import (
@@ -21,10 +22,13 @@ from services.errors import (
 from services.shipment_matches import (
     accept_match,
     estimate_route_for_fleet_manager,
+    finish_assessment,
     generate_matches_for_fleet_manager,
     geocode_location_for_fleet_manager,
+    get_match_detail,
     list_opportunities_for_fleet_manager,
     skip_match,
+    start_assessment_with_run_id,
 )
 
 router = APIRouter(
@@ -130,6 +134,61 @@ def estimate_route(
         )
     except DomainError as error:
         raise to_http_exception(error) from error
+
+
+@router.get(
+    "/{match_id}",
+    response_model=MatchDetailResponse,
+)
+def get_match(
+    match_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(fleet_manager),
+    company=Depends(require_verified_company),
+):
+    try:
+        return get_match_detail(
+            db,
+            current_user.user_id,
+            match_id,
+        )
+    except DomainError as error:
+        raise to_http_exception(error) from error
+
+
+def finish_assessment_in_background(bind, match_id: UUID, run_id: str):
+    with Session(bind=bind) as db:
+        finish_assessment(db, match_id, run_id)
+
+
+@router.post(
+    "/{match_id}/assessment",
+    response_model=MatchDetailResponse,
+)
+def create_match_assessment(
+    match_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user=Depends(fleet_manager),
+    company=Depends(require_verified_company),
+):
+    try:
+        detail, run_id = start_assessment_with_run_id(
+            db,
+            current_user.user_id,
+            match_id,
+        )
+    except DomainError as error:
+        raise to_http_exception(error) from error
+
+    background_tasks.add_task(
+        finish_assessment_in_background,
+        db.get_bind(),
+        match_id,
+        run_id,
+    )
+
+    return detail
 
 
 @router.post(

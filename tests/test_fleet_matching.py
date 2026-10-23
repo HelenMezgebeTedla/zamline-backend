@@ -14,12 +14,16 @@ from fleet_helpers import (
     create_truck,
     create_user,
 )
-from schemas.shipment_matches import FleetMatchResponse
+from schemas.shipment_matches import FleetMatchResponse, MatchDetailResponse
 from services.shipment_matches import (
     ActorNotAllowedError,
     ActorNotFoundError,
     FleetCompanyNotEligibleError,
+    MatchAccessDeniedError,
+    MatchNotFoundError,
+    ShipmentNoLongerAvailableError,
     generate_matches_for_fleet_manager,
+    get_match_detail,
     list_opportunities_for_fleet_manager,
 )
 
@@ -287,3 +291,76 @@ def test_confirmed_shipment_does_not_appear(db):
     db.commit()
 
     assert list_opportunities_for_fleet_manager(db, manager.user_id) == []
+
+
+def test_own_eligible_match_can_be_viewed(db):
+    fleet, manager = create_fleet_manager(db, "F30")
+    truck = create_truck(db, fleet, "F30")
+    shipper, shipper_user = create_shipper(db, "S30")
+    create_shipment(
+        db,
+        shipper,
+        shipper_user,
+        "S30",
+        special_requirements="Tarpaulin cover required",
+    )
+    match = generate_matches_for_fleet_manager(db, manager.user_id)[0]
+
+    detail = get_match_detail(db, manager.user_id, match.match_id)
+    response = MatchDetailResponse.model_validate(detail).model_dump()
+
+    assert response["match_id"] == match.match_id
+    assert response["shipment"]["special_requirements"] == "Tarpaulin cover required"
+    assert response["truck"]["plate_number"] == truck.plate_number
+    assert response["route"] is None
+    assert response["estimated_margin"] is None
+    assert response["assessment"] is None
+
+
+def test_match_detail_excludes_private_and_contact_data(db):
+    manager, truck, shipment, matches = setup_one_match(db)
+
+    detail = get_match_detail(db, manager.user_id, matches[0].match_id)
+    response = MatchDetailResponse.model_validate(detail).model_dump()
+    text = str(response)
+
+    for private_field in (
+        "fuel_price_per_litre",
+        "driver_daily_allowance",
+        "toll_assumption",
+        "other_costs",
+        "maintenance_per_km",
+        "fuel_consumption_l_per_100km",
+        "company_email",
+        "phone_number",
+        "business_name",
+        "password_hash",
+    ):
+        assert private_field not in text
+    assert "company_id" not in response["shipment"]
+    assert "company_id" not in response["truck"]
+
+
+def test_another_company_match_cannot_be_viewed(db):
+    manager_a, truck, shipment, matches = setup_one_match(db, "A")
+    fleet_b, manager_b = create_fleet_manager(db, "FB2")
+
+    with pytest.raises(MatchAccessDeniedError):
+        get_match_detail(db, manager_b.user_id, matches[0].match_id)
+
+
+def test_missing_match_is_not_found(db):
+    fleet, manager = create_fleet_manager(db, "F31")
+
+    with pytest.raises(MatchNotFoundError):
+        get_match_detail(db, manager.user_id, uuid.uuid4())
+
+
+def test_stale_match_detail_returns_conflict(db):
+    manager, truck, shipment, matches = setup_one_match(db)
+
+    shipment.status = models.ShipmentStatus.CONFIRMED
+    db.commit()
+
+    with pytest.raises(ShipmentNoLongerAvailableError):
+        get_match_detail(db, manager.user_id, matches[0].match_id)

@@ -8,12 +8,30 @@ from models.shipments import Shipment, ShipmentStatus
 from models.trucks import AvailabilityStatus, Truck
 from models.users import User, UserRole
 from repositories import shipment_matches as match_repository
-from services import reservations as reservation_service
-from services.errors import ConflictError, NotAllowedError, NotFoundError
+from services.errors import (
+    ConflictError,
+    NotAllowedError,
+    NotFoundError,
+    ExternalServiceError,
+)
+from services.match_assessments import (
+    apply_ai_assessment,
+    build_assessment_context,
+    build_match_detail,
+    mark_assessment_failed,
+    record_operating_costs,
+    request_ai_assessment,
+    assessment_run_id,
+    assessment_run_is_current,
+)
+from services.operating_costs import calculate_operating_costs
 from services.routing import (
     geocode_address,
     get_route_between_coordinates,
+    get_route_summary,
 )
+from uuid import uuid4
+from services import reservations as reservation_service
 
 SHIPMENT_NOT_AVAILABLE = "This shipment is no longer available."
 
@@ -195,10 +213,7 @@ def estimate_route_for_fleet_manager(
 ):
     get_fleet_manager(db, actor_user_id)
     return get_route_between_coordinates(
-        origin_latitude,
-        origin_longitude,
-        destination_latitude,
-        destination_longitude,
+        origin_latitude, origin_longitude, destination_latitude, destination_longitude
     )
 
 
@@ -209,6 +224,73 @@ def get_eligible_own_match(db: Session, actor: User, match_id):
         raise ShipmentNoLongerAvailableError(SHIPMENT_NOT_AVAILABLE)
 
     return match
+
+
+def get_match_detail(db: Session, actor_user_id, match_id):
+    actor = get_fleet_manager(db, actor_user_id)
+    match = get_eligible_own_match(db, actor, match_id)
+
+    return build_match_detail(match)
+
+
+def start_assessment(db: Session, actor_user_id, match_id):
+    actor = get_fleet_manager(db, actor_user_id)
+    match = get_eligible_own_match(db, actor, match_id)
+    company = match_repository.get_company(db, actor.company_id)
+
+    route = get_route_summary(match.shipment)
+    costs = calculate_operating_costs(company, match.truck, route)
+
+    record_operating_costs(match, route, costs, str(uuid4()))
+    db.commit()
+
+    return build_match_detail(match)
+
+
+def start_assessment_with_run_id(db: Session, actor_user_id, match_id):
+    detail = start_assessment(db, actor_user_id, match_id)
+    match = match_repository.get_match_by_id(db, match_id)
+    run_id = assessment_run_id(match)
+    if run_id is None:
+        raise RuntimeError("Assessment run ID was not stored")
+    return detail, run_id
+
+
+def finish_assessment(db: Session, match_id, run_id=None):
+    match = match_repository.get_match_by_id(db, match_id)
+    if match is None:
+        raise MatchNotFoundError("Match was not found")
+
+    active_run_id = assessment_run_id(match)
+    run_id = str(run_id or active_run_id or "")
+    if not run_id or active_run_id != run_id:
+        return build_match_detail(match)
+
+    try:
+        company = match_repository.get_company(db, match.truck.company_id)
+        route = get_route_summary(match.shipment)
+        costs = calculate_operating_costs(company, match.truck, route)
+        context = build_assessment_context(match, company, route, costs)
+        assessment = request_ai_assessment(context)
+
+        db.refresh(match)
+        if not assessment_run_is_current(match, run_id):
+            return build_match_detail(match)
+
+        apply_ai_assessment(match, assessment, run_id)
+    except ExternalServiceError as error:
+        db.refresh(match)
+        if not assessment_run_is_current(match, run_id):
+            return build_match_detail(match)
+        mark_assessment_failed(match, str(error), run_id)
+
+    db.commit()
+    return build_match_detail(match)
+
+
+def assess_match(db: Session, actor_user_id, match_id):
+    _, run_id = start_assessment_with_run_id(db, actor_user_id, match_id)
+    return finish_assessment(db, match_id, run_id)
 
 
 def decide_match(db: Session, actor_user_id, match_id, decision: ManagerDecision):
@@ -236,9 +318,4 @@ def accept_match(db: Session, actor_user_id, match_id):
 
 
 def skip_match(db: Session, actor_user_id, match_id):
-    return decide_match(
-        db,
-        actor_user_id,
-        match_id,
-        ManagerDecision.DECLINED,
-    )
+    return decide_match(db, actor_user_id, match_id, ManagerDecision.DECLINED)

@@ -21,6 +21,7 @@ dependencies = [
     "pdf2image>=1.17",
     "redis>=8.1.0",
     "pypdf>=5.0",
+    "google-genai>=2.32.0,<3",
 ]
 
 [dependency-groups]
