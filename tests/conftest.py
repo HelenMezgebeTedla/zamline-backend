@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 TEST_ENV = {
     "ENVIRONMENT": "test",
     "DATABASE_URL": "sqlite://",
-    "JWT_SECRET": "test-only-secret",
+    "JWT_SECRET": "test-only-secret-key-that-is-at-least-32-bytes",
     "JWT_ALGORITHM": "HS256",
     "JWT_EXPIRE_MINUTES": "60",
     "OTP_EXPIRE_MINUTES": "10",

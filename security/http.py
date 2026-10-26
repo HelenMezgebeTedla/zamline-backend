@@ -43,9 +43,7 @@ def install_security(app: FastAPI) -> None:
     async def security_middleware(request: Request, call_next):
         length = request.headers.get("content-length")
         if length and length.isdigit() and int(length) > MAX_REQUEST_BYTES:
-            response = _error(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Request is too large"
-            )
+            response = _error(status.HTTP_413_CONTENT_TOO_LARGE, "Request is too large")
             _add_headers(request, response)
             return response
 
