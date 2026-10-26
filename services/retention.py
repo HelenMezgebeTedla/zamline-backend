@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from models.audit_logs import AuditLog
 from models.companies import Company
 from models.users import User
-from repositories.sessions import delete_sessions_before
 from security.file_storage import FileStorage
 from security.password import hash_password
 
@@ -15,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 AUDIT_LOG_DAYS = 365
 DELETION_GRACE_DAYS = 30
-EXPIRED_SESSION_DAYS = 1
 DELETED_DOMAIN = "deleted.invalid"
 
 
@@ -93,12 +91,10 @@ def delete_old_audit_logs(db: Session, now: datetime) -> int:
 def run_retention(db: Session, now: datetime | None = None) -> dict:
     now = now or _now()
     users, companies = anonymise_deleted_accounts(db, now)
-    sessions = delete_sessions_before(db, now - timedelta(days=EXPIRED_SESSION_DAYS))
     audit_logs = delete_old_audit_logs(db, now)
     result = {
         "users_anonymised": users,
         "companies_anonymised": companies,
-        "sessions_deleted": sessions,
         "audit_logs_deleted": audit_logs,
     }
     logger.warning("Retention finished: %s", result)

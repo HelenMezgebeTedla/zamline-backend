@@ -7,7 +7,12 @@ from fastapi.testclient import TestClient
 import config
 import models
 from security import rate_limit
-from security.tokens import ACCESS_TOKEN_MAX_MINUTES, decode_access_token
+from security.tokens import (
+    ACCESS_TOKEN_MAX_MINUTES,
+    decode_access_token,
+    hash_refresh_token,
+)
+from services import sessions
 
 
 @pytest.fixture
@@ -179,26 +184,62 @@ class TestSessions:
         assert refresh.status_code == 401
 
     @pytest.mark.parametrize(
-        "field", ["expires_at", "last_used_at"], ids=["absolute", "idle"]
+        "later",
+        [timedelta(days=8), timedelta(hours=25)],
+        ids=["absolute", "idle"],
     )
     def test_expired_sessions_cannot_refresh(
-        self, client, db_session, register_and_login, field
+        self, client, monkeypatch, register_and_login, later
     ):
         tokens = register_and_login("shipper")["tokens"]
-        session = db_session.query(models.UserSession).one()
-        setattr(session, field, datetime.now(timezone.utc) - timedelta(days=30))
-        db_session.commit()
+        future = datetime.now(timezone.utc) + later
+        monkeypatch.setattr(sessions, "_now", lambda: future)
         response = client.post(
             "/users/refresh", json={"refresh_token": tokens["refresh_token"]}
         )
         assert response.status_code == 401
         assert client.get("/users/me", headers=_bearer(tokens)).status_code == 401
 
-    def test_refresh_token_is_stored_hashed(self, db_session, register_and_login):
+    def test_active_use_keeps_the_session_alive(
+        self, client, monkeypatch, register_and_login
+    ):
         tokens = register_and_login("shipper")["tokens"]
-        session = db_session.query(models.UserSession).one()
-        assert session.refresh_token_hash != tokens["refresh_token"]
-        assert len(session.refresh_token_hash) == 64
+        future = datetime.now(timezone.utc) + timedelta(hours=20)
+        monkeypatch.setattr(sessions, "_now", lambda: future)
+        renewed = client.post(
+            "/users/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert renewed.status_code == 200
+        future = future + timedelta(hours=20)
+        refreshed = client.post(
+            "/users/refresh", json={"refresh_token": renewed.json()["refresh_token"]}
+        )
+        assert refreshed.status_code == 200
+
+    def test_refresh_token_is_stored_hashed(self, register_and_login):
+        sessions.clear_sessions()
+        tokens = register_and_login("shipper")["tokens"]
+        stored = " ".join(sessions._cache.keys())
+        assert tokens["refresh_token"] not in stored
+        assert hash_refresh_token(tokens["refresh_token"]) in stored
+
+    def test_logout_on_one_device_keeps_the_other(
+        self, client, register_and_login, mock_otp_email
+    ):
+        account = register_and_login("shipper")
+        first = account["tokens"]
+        _login(client, account["payload"])
+        second = client.post(
+            "/users/verify-otp",
+            json={
+                "email": account["payload"]["company_email"],
+                "code": mock_otp_email[-1],
+                "portal": "shipper",
+            },
+        ).json()
+        assert client.post("/users/logout", headers=_bearer(first)).status_code == 204
+        assert client.get("/users/me", headers=_bearer(first)).status_code == 401
+        assert client.get("/users/me", headers=_bearer(second)).status_code == 200
 
     def test_tampered_access_token_is_refused(self, client, register_and_login):
         tokens = register_and_login("shipper")["tokens"]
@@ -424,15 +465,6 @@ class TestRetention:
         self._old(db_session, "login", None, 10)
         assert run_retention(db_session)["audit_logs_deleted"] == 1
         assert db_session.query(models.AuditLog).count() == 1
-
-    def test_old_expired_sessions_are_deleted(self, db_session, register_and_login):
-        from services.retention import run_retention
-
-        register_and_login("shipper")
-        session = db_session.query(models.UserSession).one()
-        session.expires_at = datetime.now(timezone.utc) - timedelta(days=3)
-        db_session.commit()
-        assert run_retention(db_session)["sessions_deleted"] == 1
 
 
 class TestAccessLogging:
