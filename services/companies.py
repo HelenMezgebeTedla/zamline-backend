@@ -13,6 +13,7 @@ from models.companies import VerificationStatus
 from repositories import audit_logs as audit_repo
 from repositories import companies as company_repo
 from repositories import users as user_repo
+from repositories.transactions import undo_changes
 from schemas.companies import (
     CompanyCreateSchema,
     CompanyUpdateSchema,
@@ -216,7 +217,7 @@ def create_company_service(db: Session, data: CompanyCreateSchema) -> dict:
             phone_number=fields["phone_number"],
         )
     except IntegrityError:
-        db.rollback()
+        undo_changes(db)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Company already registered",

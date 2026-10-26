@@ -466,6 +466,19 @@ class TestRetention:
         assert run_retention(db_session)["audit_logs_deleted"] == 1
         assert db_session.query(models.AuditLog).count() == 1
 
+    def test_retention_command_runs_and_closes_its_session(
+        self, db_session, monkeypatch, capsys
+    ):
+        import database
+        from services import retention
+
+        closed = []
+        monkeypatch.setattr(database, "SessionLocal", lambda: db_session)
+        monkeypatch.setattr(db_session, "close", lambda: closed.append(True))
+        retention.main()
+        assert "audit_logs_deleted" in capsys.readouterr().out
+        assert closed == [True]
+
 
 class TestAccessLogging:
     def test_refused_requests_are_logged_without_tokens(self, client, caplog):

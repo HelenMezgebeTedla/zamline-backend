@@ -8,6 +8,7 @@ from models.companies import Company
 from models.users import User
 from repositories.audit_logs import delete_before, get_entity_ids_before
 from repositories.companies import get_companies_by_ids
+from repositories.transactions import open_session, save_changes
 from repositories.users import get_users_by_company, get_users_by_ids
 from security.file_storage import FileStorage
 from security.password import hash_password
@@ -66,14 +67,14 @@ def anonymise_deleted_accounts(db: Session, now: datetime) -> tuple[int, int]:
             _anonymise_company(company, storage)
             companies_done += 1
 
-    db.commit()
+    save_changes(db)
     return users_done, companies_done
 
 
 def delete_old_audit_logs(db: Session, now: datetime) -> int:
     cutoff = now - timedelta(days=AUDIT_LOG_DAYS)
     count = delete_before(db, cutoff)
-    db.commit()
+    save_changes(db)
     return count
 
 
@@ -91,13 +92,8 @@ def run_retention(db: Session, now: datetime | None = None) -> dict:
 
 
 def main() -> None:
-    from database import SessionLocal
-
-    db = SessionLocal()
-    try:
+    with open_session() as db:
         print(run_retention(db))
-    finally:
-        db.close()
 
 
 if __name__ == "__main__":

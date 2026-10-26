@@ -13,6 +13,7 @@ from repositories.companies import (
     get_company_by_email,
     get_company_by_registration_number,
 )
+from repositories.transactions import reload, save_changes, undo_changes
 from repositories.users import (
     create_user,
     get_user_by_email,
@@ -175,16 +176,15 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
             role=role,
             commit=False,
         )
-        db.commit()
+        save_changes(db)
     except IntegrityError:
-        db.rollback()
+        undo_changes(db)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Company or email already registered",
         ) from None
 
-    db.refresh(company)
-    db.refresh(user)
+    reload(db, company, user)
 
     create_audit_log(
         db,
@@ -419,7 +419,7 @@ def update_current_user(db: Session, user, data: UserUpdateSchema) -> dict:
     try:
         updated_user = update_user(db, user, **changes)
     except IntegrityError:
-        db.rollback()
+        undo_changes(db)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already in use",
