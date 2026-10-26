@@ -478,3 +478,21 @@ class TestAccessLogging:
         for _ in range(5):
             client.post("/companies/create", json={})
         assert client.post("/companies/create", json={}).status_code == 429
+
+
+class TestProductionDocs:
+    def test_docs_are_hidden_in_production(self, monkeypatch, db_session):
+        import importlib
+
+        import main
+
+        monkeypatch.setattr(config, "ENVIRONMENT", "production")
+        production = importlib.reload(main)
+        try:
+            with TestClient(production.app) as api:
+                for path in ("/docs", "/redoc", "/openapi.json"):
+                    assert api.get(path).status_code == 404
+                assert api.get("/health").status_code == 200
+        finally:
+            monkeypatch.setattr(config, "ENVIRONMENT", "test")
+            importlib.reload(main)

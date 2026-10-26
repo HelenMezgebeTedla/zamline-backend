@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import CORS_ORIGINS
+from config import CORS_ORIGINS, ENVIRONMENT
 from database import Base, engine
 from security.http import install_security
 from routers.audit_logs import router as audit_logs_router
@@ -15,7 +15,15 @@ from routers.users import router as users_router
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="ZamLine", version="0.2.0")
+PUBLIC_DOCS = ENVIRONMENT.strip().lower() != "production"
+
+app = FastAPI(
+    title="ZamLine",
+    version="0.2.0",
+    docs_url="/docs" if PUBLIC_DOCS else None,
+    redoc_url="/redoc" if PUBLIC_DOCS else None,
+    openapi_url="/openapi.json" if PUBLIC_DOCS else None,
+)
 
 install_security(app)
 
