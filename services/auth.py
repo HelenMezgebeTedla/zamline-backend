@@ -28,7 +28,7 @@ def authenticate_token(db: Session, token: str):
     if user is None or not user.is_active:
         raise credentials_error
     if payload.get("sid") is not None:
-        ensure_session_active(db, payload["sid"])
+        ensure_session_active(payload["sid"])
     return user
 
 

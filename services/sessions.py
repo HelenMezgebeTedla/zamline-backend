@@ -184,7 +184,7 @@ def refresh_session(db: Session, refresh_token: str | None) -> dict:
     return _tokens(user, session_id, new_token)
 
 
-def ensure_session_active(db: Session, session_id: str) -> None:
+def ensure_session_active(session_id: str) -> None:
     record = _load(str(session_id))
     if record is None or _seconds_left(record, _now()) <= 0:
         raise _session_expired()

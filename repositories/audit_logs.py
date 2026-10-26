@@ -63,3 +63,20 @@ def list_for_company(
     total = query.count()
     items = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit).all()
     return items, total
+
+
+def get_entity_ids_before(db: Session, action_type: str, cutoff) -> set:
+    rows = (
+        db.query(AuditLog.entity_id)
+        .filter(AuditLog.action_type == action_type, AuditLog.created_at < cutoff)
+        .all()
+    )
+    return {row[0] for row in rows if row[0] is not None}
+
+
+def delete_before(db: Session, cutoff) -> int:
+    return (
+        db.query(AuditLog)
+        .filter(AuditLog.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )

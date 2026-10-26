@@ -71,3 +71,7 @@ def list_companies(
     if verification_status is not None:
         query = query.filter(Company.verification_status == verification_status)
     return query.order_by(Company.created_at.desc()).limit(limit).all()
+
+
+def get_companies_by_ids(db: Session, company_ids) -> list[Company]:
+    return db.query(Company).filter(Company.company_id.in_(company_ids)).all()

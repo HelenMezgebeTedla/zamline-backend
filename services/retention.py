@@ -4,9 +4,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from models.audit_logs import AuditLog
 from models.companies import Company
 from models.users import User
+from repositories.audit_logs import delete_before, get_entity_ids_before
+from repositories.companies import get_companies_by_ids
+from repositories.users import get_users_by_company, get_users_by_ids
 from security.file_storage import FileStorage
 from security.password import hash_password
 
@@ -19,15 +21,6 @@ DELETED_DOMAIN = "deleted.invalid"
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _requested_before(db: Session, action_type: str, cutoff: datetime) -> set:
-    rows = (
-        db.query(AuditLog.entity_id)
-        .filter(AuditLog.action_type == action_type, AuditLog.created_at < cutoff)
-        .all()
-    )
-    return {row[0] for row in rows if row[0] is not None}
 
 
 def _anonymise_user(user: User) -> None:
@@ -54,15 +47,15 @@ def anonymise_deleted_accounts(db: Session, now: datetime) -> tuple[int, int]:
     users_done = 0
     companies_done = 0
 
-    user_ids = _requested_before(db, "user_deletion_requested", cutoff)
-    for user in db.query(User).filter(User.user_id.in_(user_ids)).all():
+    user_ids = get_entity_ids_before(db, "user_deletion_requested", cutoff)
+    for user in get_users_by_ids(db, user_ids):
         if not user.is_active and not user.email.endswith(DELETED_DOMAIN):
             _anonymise_user(user)
             users_done += 1
 
-    company_ids = _requested_before(db, "company_deletion_requested", cutoff)
-    for company in db.query(Company).filter(Company.company_id.in_(company_ids)).all():
-        members = db.query(User).filter(User.company_id == company.company_id).all()
+    company_ids = get_entity_ids_before(db, "company_deletion_requested", cutoff)
+    for company in get_companies_by_ids(db, company_ids):
+        members = get_users_by_company(db, company.company_id)
         if any(member.is_active for member in members):
             continue
         for member in members:
@@ -79,11 +72,7 @@ def anonymise_deleted_accounts(db: Session, now: datetime) -> tuple[int, int]:
 
 def delete_old_audit_logs(db: Session, now: datetime) -> int:
     cutoff = now - timedelta(days=AUDIT_LOG_DAYS)
-    count = (
-        db.query(AuditLog)
-        .filter(AuditLog.created_at < cutoff)
-        .delete(synchronize_session=False)
-    )
+    count = delete_before(db, cutoff)
     db.commit()
     return count
 

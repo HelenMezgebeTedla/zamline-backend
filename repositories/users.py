@@ -59,3 +59,11 @@ def deactivate_users_by_company(db: Session, company_id) -> int:
     )
     db.commit()
     return count
+
+
+def get_users_by_ids(db: Session, user_ids) -> list[User]:
+    return db.query(User).filter(User.user_id.in_(user_ids)).all()
+
+
+def get_users_by_company(db: Session, company_id) -> list[User]:
+    return db.query(User).filter(User.company_id == company_id).all()
