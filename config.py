@@ -60,3 +60,5 @@ UNACCEPTED_CARGO_TYPES = {
 }
 
 REDIS_URL = os.environ["REDIS_URL"]
+if REDIS_URL.startswith("rediss://") and "ssl_cert_reqs" not in REDIS_URL:
+    REDIS_URL += ("&" if "?" in REDIS_URL else "?") + "ssl_cert_reqs=none"
