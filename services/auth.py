@@ -8,6 +8,7 @@ from models.companies import VerificationStatus
 from repositories.companies import get_company_by_id
 from repositories.users import get_user_by_id
 from security.tokens import decode_access_token
+from services.sessions import ensure_session_active
 
 
 def authenticate_token(db: Session, token: str):
@@ -26,6 +27,8 @@ def authenticate_token(db: Session, token: str):
     user = get_user_by_id(db, user_id)
     if user is None or not user.is_active:
         raise credentials_error
+    if payload.get("sid") is not None:
+        ensure_session_active(db, payload["sid"])
     return user
 
 

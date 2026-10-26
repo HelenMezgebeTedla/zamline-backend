@@ -6,6 +6,7 @@ from models.shipments import Shipment, ShipmentStatus
 from models.shipment_matches import ShipmentMatch, ManagerDecision, MatchOutcome
 from models.reservations import Reservation, ReservationStatus
 from models.audit_logs import AuditLog
+from models.sessions import UserSession
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "Reservation",
     "ReservationStatus",
     "AuditLog",
+    "UserSession",
 ]

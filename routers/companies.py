@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependency import get_current_user
 from models.companies import CompanyType
+from security.rate_limit import limit
 from schemas.companies import (
     CertificateVerificationResponseSchema,
     CompanyCreateSchema,
@@ -27,7 +28,10 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 
 @router.post(
-    "/create", response_model=CompanyResponseSchema, status_code=status.HTTP_201_CREATED
+    "/create",
+    response_model=CompanyResponseSchema,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit("company-create", 5, 60 * 60))],
 )
 def create_company_route(data: CompanyCreateSchema, db: Session = Depends(get_db)):
     return create_company_service(db, data)
@@ -94,6 +98,7 @@ def verify_company_route(
 @router.post(
     "/{company_id}/verify-certificate",
     response_model=CertificateVerificationResponseSchema,
+    dependencies=[Depends(limit("verify-certificate", 10, 60 * 60))],
 )
 def verify_certificate_route(
     company_id: str,

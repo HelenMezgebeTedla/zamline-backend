@@ -68,6 +68,10 @@ class ResetPasswordSchema(BaseModel):
         return self
 
 
+class RefreshTokenSchema(BaseModel):
+    refresh_token: str
+
+
 class MessageSchema(BaseModel):
     message: str
 
@@ -80,6 +84,8 @@ class LoginResponseSchema(BaseModel):
 class TokenSchema(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
+    expires_in: int | None = None
 
 
 class UserResponseSchema(BaseModel):

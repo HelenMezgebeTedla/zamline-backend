@@ -2,7 +2,7 @@ import pytest
 
 PORTAL = "shipper"
 
-NEW_PASSWORD = "BrandNewPass456"
+NEW_PASSWORD = "BrandNewPass456!"
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ class TestResetPassword:
         _forgot(client, email)
         code = mock_otp_email[-1]
         assert _reset(client, email, code).status_code == 200
-        assert _reset(client, email, code, "AnotherPass789").status_code == 400
+        assert _reset(client, email, code, "AnotherPass789!").status_code == 400
 
     def test_wrong_code_is_refused(self, client, account, mock_otp_email):
         email = account["company_email"]

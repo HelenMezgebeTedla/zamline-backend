@@ -13,7 +13,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = os.environ["JWT_ALGORITHM"]
 JWT_EXPIRE_MINUTES = int(os.environ["JWT_EXPIRE_MINUTES"])
-OTP_EXPIRE_MINUTES = int(os.environ["OTP_EXPIRE_MINUTES"])
+OTP_EXPIRE_MINUTES = max(1, min(int(os.environ["OTP_EXPIRE_MINUTES"]), 5))
 OTP_MAX_ATTEMPTS = int(os.environ["OTP_MAX_ATTEMPTS"])
 
 FRONTEND_URL = os.environ["FRONTEND_URL"].rstrip("/")

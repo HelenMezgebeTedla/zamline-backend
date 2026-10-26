@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 from functools import lru_cache
 
@@ -26,9 +27,10 @@ from schemas.users import (
     UserLoginSchema,
     UserUpdateSchema,
 )
+from security import rate_limit
 from security.password import hash_password, verify_password
-from security.tokens import create_access_token
 from services import otp as otp_service
+from services.sessions import end_all_sessions, start_session
 from services.companies import (
     clean_person_name,
     enum_value,
@@ -48,6 +50,30 @@ RESET_DONE_MESSAGE = "Your password has been reset. You can now log in."
 
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_BYTES = 128
+PASSWORD_RULES = (
+    (re.compile(r"[A-Z]"), "an uppercase letter"),
+    (re.compile(r"[a-z]"), "a lowercase letter"),
+    (re.compile(r"[0-9]"), "a number"),
+    (re.compile(r"[^A-Za-z0-9\s]"), "a special character such as ! @ # $ %"),
+)
+COMMON_PASSWORDS = {
+    "password",
+    "password1",
+    "password123",
+    "passw0rd",
+    "qwerty123",
+    "welcome1",
+    "welcome123",
+    "admin123",
+    "letmein1",
+    "iloveyou1",
+    "12345678",
+    "123456789",
+    "zamline1",
+    "zamline123",
+}
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_LOCK_SECONDS = 15 * 60
 PERSON_NAME_MAX = 50
 
 ROLE_FOR_PORTAL = {"shipper": "shipper", "fleet": "fleet_manager"}
@@ -69,13 +95,24 @@ def _unknown_user_hash() -> str:
     return hash_password(secrets.token_urlsafe(16))
 
 
-def validate_password(value: str | None) -> str:
+def validate_password(value: str | None, email: str | None = None) -> str:
     if not value:
         reject("Password cannot be empty")
     if len(value) < PASSWORD_MIN_LENGTH:
         reject(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
     if len(value.encode("utf-8")) > PASSWORD_MAX_BYTES:
         reject(f"Password must not exceed {PASSWORD_MAX_BYTES} bytes")
+    if value != value.strip():
+        reject("Password must not start or end with a space")
+    missing = [label for pattern, label in PASSWORD_RULES if not pattern.search(value)]
+    if missing:
+        reject("Password must include " + ", ".join(missing))
+    simplified = re.sub(r"[^a-z0-9]", "", value.lower())
+    if value.lower() in COMMON_PASSWORDS or simplified in COMMON_PASSWORDS:
+        reject("Password is too common. Choose a stronger password")
+    local_part = (email or "").split("@")[0].lower()
+    if len(local_part) >= 4 and local_part in value.lower():
+        reject("Password must not contain your email address")
     return value
 
 
@@ -100,9 +137,8 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
     )
     first_name = clean_person_name(data.first_name, "First name", PERSON_NAME_MAX)
     last_name = clean_person_name(data.last_name, "Last name", PERSON_NAME_MAX)
-    validate_password(data.password)
-
     email = normalise_email(data.company_email)
+    validate_password(data.password, email)
 
     if get_company_by_email(db, email) or get_user_by_email(db, email):
         raise HTTPException(
@@ -178,7 +214,9 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
 
 
 def login_user(db: Session, data: UserLoginSchema) -> dict:
-    user = get_user_by_email(db, normalise_email(data.email))
+    email = normalise_email(data.email)
+    rate_limit.ensure_not_blocked("login-fail", email, LOGIN_FAILURE_LIMIT)
+    user = get_user_by_email(db, email)
 
     password_ok = False
     if len(data.password.encode("utf-8")) <= PASSWORD_MAX_BYTES:
@@ -186,6 +224,7 @@ def login_user(db: Session, data: UserLoginSchema) -> dict:
             data.password, user.password_hash if user else _unknown_user_hash()
         )
     if not user or not password_ok:
+        rate_limit.record_failure("login-fail", email, LOGIN_LOCK_SECONDS)
         create_audit_log(
             db,
             user_id=user.user_id if user else None,
@@ -207,6 +246,7 @@ def login_user(db: Session, data: UserLoginSchema) -> dict:
 
     ensure_portal_matches_role(user, data.portal)
 
+    rate_limit.reset("login-fail", email)
     otp_service.issue_otp(db, user)
     create_audit_log(
         db,
@@ -261,10 +301,7 @@ def verify_otp(db: Session, data: OTPVerifySchema) -> dict:
         entity_type="user",
         entity_id=user.user_id,
     )
-    return {
-        "access_token": create_access_token(user.user_id, enum_value(user.role)),
-        "token_type": "bearer",
-    }
+    return start_session(db, user)
 
 
 def resend_otp(db: Session, data: ResendOTPSchema) -> dict:
@@ -314,8 +351,9 @@ def request_password_reset(db: Session, data: ForgotPasswordSchema) -> dict:
 
 def reset_password(db: Session, data: ResetPasswordSchema) -> dict:
     code = otp_service.validate_code(data.code)
-    validate_password(data.new_password)
-    user = get_user_by_email(db, normalise_email(data.email))
+    email = normalise_email(data.email)
+    validate_password(data.new_password, email)
+    user = get_user_by_email(db, email)
 
     if user is None or not user.is_active:
         raise HTTPException(
@@ -337,6 +375,8 @@ def reset_password(db: Session, data: ResetPasswordSchema) -> dict:
         raise
 
     update_user(db, user, password_hash=hash_password(data.new_password))
+    end_all_sessions(db, user, "password_reset")
+    rate_limit.reset("login-fail", email)
     create_audit_log(
         db,
         user_id=user.user_id,
@@ -399,6 +439,7 @@ def update_current_user(db: Session, user, data: UserUpdateSchema) -> dict:
 
 def delete_current_user(db: Session, user) -> None:
     update_user(db, user, is_active=False)
+    end_all_sessions(db, user, "account_deleted")
     create_audit_log(
         db,
         user_id=user.user_id,

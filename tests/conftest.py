@@ -39,6 +39,7 @@ TEST_ENV = {
     "UPLOAD_DIR": "uploads/test-certificates",
     "UNACCEPTED_CARGO_TYPES": "",
     "REDIS_URL": "",
+    "RATE_LIMIT_ENABLED": "false",
 }
 
 for key, value in TEST_ENV.items():
@@ -275,7 +276,7 @@ def registration_payload():
             "company_type": company_type,
             "first_name": "Test",
             "last_name": "Owner",
-            "password": "StrongPass123",
+            "password": "StrongPass123!",
         }
         payload.update(overrides)
         return payload
@@ -313,6 +314,7 @@ def register_and_login(client, mock_otp_email, registration_payload):
         body = registered.json()
         return {
             "headers": {"Authorization": f"Bearer {verified.json()['access_token']}"},
+            "tokens": verified.json(),
             "payload": payload,
             "company_id": body["company"]["company_id"],
             "user_id": body["user"]["user_id"],

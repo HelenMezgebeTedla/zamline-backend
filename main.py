@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import CORS_ORIGINS
 from database import Base, engine
+from security.http import install_security
 from routers.audit_logs import router as audit_logs_router
 from routers.companies import router as companies_router
 from routers.cost_settings import router as cost_settings_router
@@ -15,6 +16,8 @@ from routers.users import router as users_router
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ZamLine", version="0.2.0")
+
+install_security(app)
 
 if CORS_ORIGINS:
     app.add_middleware(
