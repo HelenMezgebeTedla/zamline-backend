@@ -16,11 +16,16 @@ class CompanyRegistrationSchema(BaseModel):
     last_name: str
     password: str
     confirm_password: str | None = None
+    accept_terms: bool = False
 
     @model_validator(mode="after")
     def passwords_match(self):
         if self.confirm_password is not None and self.password != self.confirm_password:
             raise ValueError("Passwords do not match")
+        if self.accept_terms is not True:
+            raise ValueError(
+                "You must accept the Terms and Policy to create an account"
+            )
         return self
 
 
@@ -97,6 +102,9 @@ class UserResponseSchema(BaseModel):
     role: str
     is_active: bool
     created_at: str | None = None
+    terms_accepted: bool = False
+    terms_version: str | None = None
+    terms_accepted_at: str | None = None
 
     model_config = {"from_attributes": True}
 

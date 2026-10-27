@@ -7,6 +7,7 @@ from models.users import UserRole
 from services.auth import (
     authenticate_token,
     ensure_role,
+    ensure_terms_accepted,
     ensure_verified,
     get_company_for_user,
 )
@@ -14,11 +15,16 @@ from services.auth import (
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 
 
-def get_current_user(
+def get_signed_in_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
     return authenticate_token(db, token)
+
+
+def get_current_user(current_user=Depends(get_signed_in_user)):
+    ensure_terms_accepted(current_user)
+    return current_user
 
 
 def get_current_company(

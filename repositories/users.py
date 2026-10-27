@@ -20,6 +20,8 @@ def create_user(
     password_hash: str,
     role: str,
     commit: bool = True,
+    terms_accepted_at=None,
+    terms_version: str | None = None,
 ) -> User:
     user = User(
         company_id=company_id,
@@ -28,6 +30,8 @@ def create_user(
         email=email,
         password_hash=password_hash,
         role=role,
+        terms_accepted_at=terms_accepted_at,
+        terms_version=terms_version,
     )
     db.add(user)
     if commit:

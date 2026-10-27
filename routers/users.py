@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from dependency import get_current_user, oauth2_scheme
+from dependency import get_current_user, get_signed_in_user, oauth2_scheme
 from security.rate_limit import hit, limit
 from security.tokens import decode_access_token
 from schemas.users import (
@@ -24,6 +24,7 @@ from schemas.users import (
 from services.companies import normalise_email
 from services.sessions import end_session, refresh_session
 from services.users import (
+    accept_terms,
     delete_current_user,
     get_current_user_profile,
     login_user,
@@ -115,7 +116,7 @@ def refresh_route(data: RefreshTokenSchema, db: Session = Depends(get_db)):
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout_route(
     token: str = Depends(oauth2_scheme),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_signed_in_user),
     db: Session = Depends(get_db),
 ):
     try:
@@ -125,8 +126,20 @@ def logout_route(
     end_session(db, current_user, session_id)
 
 
+@router.post(
+    "/accept-terms",
+    response_model=UserResponseSchema,
+    dependencies=[Depends(limit("accept-terms", 10, MINUTE))],
+)
+def accept_terms_route(
+    current_user=Depends(get_signed_in_user),
+    db: Session = Depends(get_db),
+):
+    return accept_terms(db, current_user)
+
+
 @router.get("/me", response_model=UserResponseSchema)
-def get_me(current_user=Depends(get_current_user)):
+def get_me(current_user=Depends(get_signed_in_user)):
     return get_current_user_profile(current_user)
 
 
@@ -150,7 +163,7 @@ def patch_me(
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 def delete_me(
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_signed_in_user),
     db: Session = Depends(get_db),
 ):
     delete_current_user(db, current_user)

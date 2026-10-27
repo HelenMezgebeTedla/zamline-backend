@@ -1,12 +1,14 @@
 import logging
 import re
 import secrets
+from datetime import datetime, timezone
 from functools import lru_cache
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from models.users import TERMS_VERSION
 from repositories.audit_logs import create_audit_log
 from repositories.companies import (
     create_company,
@@ -127,6 +129,9 @@ def user_to_dict(user) -> dict:
         "role": enum_value(user.role),
         "is_active": user.is_active,
         "created_at": iso_or_none(user.created_at),
+        "terms_accepted": user.terms_accepted,
+        "terms_version": user.terms_version,
+        "terms_accepted_at": iso_or_none(user.terms_accepted_at),
     }
 
 
@@ -175,6 +180,8 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
             password_hash=hash_password(data.password),
             role=role,
             commit=False,
+            terms_accepted_at=datetime.now(timezone.utc),
+            terms_version=TERMS_VERSION,
         )
         save_changes(db)
     except IntegrityError:
@@ -193,7 +200,7 @@ def register_user(db: Session, data: CompanyRegistrationSchema) -> dict:
         action_type="user_registered",
         entity_type="user",
         entity_id=user.user_id,
-        details={"role": role},
+        details={"role": role, "terms_version": TERMS_VERSION},
     )
 
     try:
@@ -390,6 +397,27 @@ def reset_password(db: Session, data: ResetPasswordSchema) -> dict:
 
 def get_current_user_profile(user) -> dict:
     return user_to_dict(user)
+
+
+def accept_terms(db: Session, user) -> dict:
+    if user.terms_accepted:
+        return user_to_dict(user)
+    updated_user = update_user(
+        db,
+        user,
+        terms_accepted_at=datetime.now(timezone.utc),
+        terms_version=TERMS_VERSION,
+    )
+    create_audit_log(
+        db,
+        user_id=user.user_id,
+        company_id=user.company_id,
+        action_type="terms_accepted",
+        entity_type="user",
+        entity_id=user.user_id,
+        details={"terms_version": TERMS_VERSION},
+    )
+    return user_to_dict(updated_user)
 
 
 def update_current_user(db: Session, user, data: UserUpdateSchema) -> dict:

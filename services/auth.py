@@ -48,6 +48,16 @@ def ensure_role(user, allowed_roles) -> None:
         )
 
 
+TERMS_REQUIRED = "Please accept the Terms and Policy to continue."
+
+
+def ensure_terms_accepted(user) -> None:
+    if not user.terms_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=TERMS_REQUIRED
+        )
+
+
 def ensure_verified(company) -> None:
     if company.verification_status != VerificationStatus.VERIFIED:
         raise HTTPException(

@@ -277,6 +277,7 @@ def registration_payload():
             "first_name": "Test",
             "last_name": "Owner",
             "password": "StrongPass123!",
+            "accept_terms": True,
         }
         payload.update(overrides)
         return payload
