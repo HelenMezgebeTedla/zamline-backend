@@ -367,6 +367,7 @@ class TestHttpProtection:
         response = client.get("/docs")
         assert response.status_code == 200
         assert "Content-Security-Policy" not in response.headers
+        assert "supportedSubmitMethods" not in response.text
 
     def test_very_large_requests_are_refused(self, client):
         response = client.post(
@@ -494,7 +495,7 @@ class TestAccessLogging:
 
 
 class TestProductionDocs:
-    def test_docs_are_hidden_in_production(self, monkeypatch, db_session):
+    def test_docs_are_read_only_in_production(self, monkeypatch, db_session):
         import importlib
 
         import main
@@ -504,7 +505,9 @@ class TestProductionDocs:
         try:
             with TestClient(production.app) as api:
                 for path in ("/docs", "/redoc", "/openapi.json"):
-                    assert api.get(path).status_code == 404
+                    assert api.get(path).status_code == 200
+                assert '"supportedSubmitMethods": []' in api.get("/docs").text
+                assert api.get("/users/me").status_code == 401
                 assert api.get("/health").status_code == 200
         finally:
             monkeypatch.setattr(config, "ENVIRONMENT", "test")

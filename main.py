@@ -15,14 +15,12 @@ from routers.users import router as users_router
 
 Base.metadata.create_all(bind=engine)
 
-PUBLIC_DOCS = ENVIRONMENT.strip().lower() != "production"
+READ_ONLY_DOCS = ENVIRONMENT.strip().lower() == "production"
 
 app = FastAPI(
     title="ZamLine",
     version="0.2.0",
-    docs_url="/docs" if PUBLIC_DOCS else None,
-    redoc_url="/redoc" if PUBLIC_DOCS else None,
-    openapi_url="/openapi.json" if PUBLIC_DOCS else None,
+    swagger_ui_parameters=({"supportedSubmitMethods": []} if READ_ONLY_DOCS else None),
 )
 
 install_security(app)
